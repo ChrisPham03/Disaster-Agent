@@ -16,7 +16,7 @@ apps:
       namespace: "${NAMESPACE}"
       agent_name: "SeverityAgent"
       display_name: "Disaster Severity Triage Agent"
-      supports_streaming: false
+      supports_streaming: true
       
       model: *general_model
       

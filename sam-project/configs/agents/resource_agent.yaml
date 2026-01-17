@@ -16,7 +16,7 @@ apps:
       namespace: "${NAMESPACE}"
       agent_name: "ResourcesAgent"
       display_name: "Disaster Resources Estimation Agent"
-      supports_streaming: false
+      supports_streaming: true
       
       model: *general_model
       
