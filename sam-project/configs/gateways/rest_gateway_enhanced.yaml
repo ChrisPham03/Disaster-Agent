@@ -1,0 +1,371 @@
+# Enhanced REST Gateway Configuration for Dashboard Integration
+# Includes all endpoints required by the React dashboard
+
+gateway:
+  name: rest_gateway
+  type: rest
+  port: 5050
+  
+  cors:
+    enabled: true
+    origins: 
+      - "*"
+      - "http://localhost:3000"
+      - "http://localhost:5173"
+      - "http://127.0.0.1:3000"
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    headers: ["Content-Type", "Authorization", "X-Request-ID"]
+  
+  endpoints:
+    # =========================================================
+    # Health & Status Endpoints
+    # =========================================================
+    - path: /api/health
+      method: GET
+      description: "System health check"
+      response:
+        status: "ok"
+        version: "1.0.0"
+        timestamp: "${timestamp}"
+        agents:
+          - name: "OrchestratorAgent"
+            status: "active"
+          - name: "SeverityAgent"
+            status: "active"
+          - name: "ResourcesAgent"
+            status: "active"
+    
+    - path: /api/status
+      method: GET
+      description: "Detailed system status"
+      agent: orchestrator_agent
+    
+    # =========================================================
+    # Victim Management (Master/Orchestrator Agent)
+    # =========================================================
+    - path: /api/victim/report
+      method: POST
+      description: "Submit a new victim report"
+      agent: orchestrator_agent
+      request_schema:
+        type: object
+        required: ["description"]
+        properties:
+          location:
+            type: string
+            description: "Address or location description"
+          latitude:
+            type: number
+            description: "GPS latitude coordinate"
+          longitude:
+            type: number
+            description: "GPS longitude coordinate"
+          description:
+            type: string
+            description: "Description of the emergency situation"
+          num_people:
+            type: integer
+            minimum: 1
+            description: "Number of people affected"
+          reporter_contact:
+            type: string
+            description: "Contact information of the reporter"
+    
+    - path: /api/victim/priority
+      method: POST
+      description: "Calculate priority score for a victim situation"
+      agent: orchestrator_agent
+      request_schema:
+        type: object
+        required: ["severity", "num_people"]
+        properties:
+          severity:
+            type: string
+            enum: ["CRITICAL", "URGENT", "SERIOUS", "MINOR", "NON-URGENT"]
+          num_people:
+            type: integer
+          has_injuries:
+            type: boolean
+          additional_factors:
+            type: object
+            properties:
+              fire_hazard:
+                type: boolean
+              flooding:
+                type: boolean
+              structural_collapse:
+                type: boolean
+    
+    - path: /api/victim/queue
+      method: GET
+      description: "Get the priority queue of all victims"
+      agent: orchestrator_agent
+      query_params:
+        - name: limit
+          type: integer
+          default: 20
+          description: "Maximum number of victims to return"
+        - name: status
+          type: string
+          enum: ["pending", "in_progress", "resolved", "all"]
+          default: "all"
+    
+    - path: /api/victim/{victim_id}
+      method: GET
+      description: "Get details for a specific victim"
+      agent: orchestrator_agent
+    
+    - path: /api/victim/{victim_id}/status
+      method: PUT
+      description: "Update victim status"
+      agent: orchestrator_agent
+      request_schema:
+        type: object
+        required: ["status"]
+        properties:
+          status:
+            type: string
+            enum: ["pending", "in_progress", "resolved"]
+    
+    # =========================================================
+    # Severity Analysis (Severity Agent)
+    # =========================================================
+    - path: /api/severity/analyze
+      method: POST
+      description: "Analyze situation severity"
+      agent: severity_agent
+      request_schema:
+        type: object
+        required: ["description", "victim_id"]
+        properties:
+          description:
+            type: string
+          victim_id:
+            type: string
+          num_people:
+            type: integer
+    
+    # =========================================================
+    # Rescue Operations (Rescue Agent)
+    # =========================================================
+    - path: /api/rescue/calculate
+      method: POST
+      description: "Calculate equipment and personnel for rescue scenario"
+      agent: rescue_agent
+      request_schema:
+        type: object
+        required: ["scenario_type", "num_victims"]
+        properties:
+          scenario_type:
+            type: string
+            enum: ["building_collapse", "flood", "fire", "medical", "general"]
+          num_victims:
+            type: integer
+          severity:
+            type: string
+          special_conditions:
+            type: array
+            items:
+              type: string
+    
+    - path: /api/rescue/route
+      method: POST
+      description: "Get optimal route to victim location"
+      agent: rescue_agent
+      request_schema:
+        type: object
+        required: ["origin", "destination"]
+        properties:
+          origin:
+            type: object
+            required: ["lat", "lng"]
+            properties:
+              lat:
+                type: number
+              lng:
+                type: number
+          destination:
+            type: object
+            required: ["lat", "lng"]
+            properties:
+              lat:
+                type: number
+              lng:
+                type: number
+          avoid_hazards:
+            type: array
+            items:
+              type: string
+    
+    - path: /api/rescue/eta
+      method: POST
+      description: "Estimate arrival time for a team"
+      agent: rescue_agent
+      request_schema:
+        type: object
+        required: ["team_id", "victim_id"]
+        properties:
+          team_id:
+            type: string
+          victim_id:
+            type: string
+    
+    - path: /api/rescue/teams
+      method: GET
+      description: "Get all rescue teams and their status"
+      agent: rescue_agent
+    
+    - path: /api/rescue/teams/{team_id}
+      method: GET
+      description: "Get specific team details"
+      agent: rescue_agent
+    
+    - path: /api/rescue/assign
+      method: POST
+      description: "Assign a rescue team to a victim"
+      agent: rescue_agent
+      request_schema:
+        type: object
+        required: ["team_id", "victim_id"]
+        properties:
+          team_id:
+            type: string
+          victim_id:
+            type: string
+    
+    - path: /api/rescue/teams/{team_id}/location
+      method: PUT
+      description: "Update team location (GPS tracking)"
+      agent: rescue_agent
+      request_schema:
+        type: object
+        required: ["lat", "lng"]
+        properties:
+          lat:
+            type: number
+          lng:
+            type: number
+          timestamp:
+            type: string
+    
+    # =========================================================
+    # Resource Management (Resource Agent)
+    # =========================================================
+    - path: /api/resource/inventory
+      method: GET
+      description: "Get current inventory status"
+      agent: resource_agent
+    
+    - path: /api/resource/inventory/{item}
+      method: GET
+      description: "Get status of specific inventory item"
+      agent: resource_agent
+    
+    - path: /api/resource/allocate
+      method: POST
+      description: "Allocate resources to a mission"
+      agent: resource_agent
+      request_schema:
+        type: object
+        required: ["request_id", "mission_id", "equipment_list"]
+        properties:
+          request_id:
+            type: string
+          mission_id:
+            type: string
+          equipment_list:
+            type: array
+            items:
+              type: object
+              required: ["item", "quantity"]
+              properties:
+                item:
+                  type: string
+                quantity:
+                  type: integer
+                priority:
+                  type: string
+                  enum: ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+    
+    - path: /api/resource/release
+      method: POST
+      description: "Release resources from completed mission"
+      agent: resource_agent
+      request_schema:
+        type: object
+        required: ["mission_id"]
+        properties:
+          mission_id:
+            type: string
+    
+    - path: /api/resource/estimate
+      method: POST
+      description: "Estimate resource needs for a situation"
+      agent: resource_agent
+      request_schema:
+        type: object
+        required: ["description", "victim_id"]
+        properties:
+          description:
+            type: string
+          victim_id:
+            type: string
+          num_people:
+            type: integer
+    
+    # =========================================================
+    # Dashboard-Specific Endpoints
+    # =========================================================
+    - path: /api/dashboard/summary
+      method: GET
+      description: "Get dashboard summary statistics"
+      agent: orchestrator_agent
+      response_example:
+        total_victims: 15
+        critical_count: 3
+        urgent_count: 5
+        active_teams: 4
+        available_teams: 2
+        pending_missions: 8
+    
+    - path: /api/dashboard/map-data
+      method: GET
+      description: "Get all location data for map visualization"
+      agent: orchestrator_agent
+      response_example:
+        victims:
+          - victim_id: "V-123"
+            location: { lat: 13.7563, lng: 100.5018 }
+            severity: 9
+            status: "pending"
+        teams:
+          - team_id: "T-Alpha"
+            location: { lat: 13.7510, lng: 100.5100 }
+            status: "en_route"
+            assigned_to: "V-123"
+    
+    - path: /api/dashboard/activity-feed
+      method: GET
+      description: "Get recent activity log for dashboard"
+      agent: orchestrator_agent
+      query_params:
+        - name: limit
+          type: integer
+          default: 50
+        - name: since
+          type: string
+          description: "ISO timestamp to fetch activities since"
+
+  # Rate limiting configuration
+  rate_limiting:
+    enabled: true
+    requests_per_minute: 120
+    burst_size: 20
+  
+  # Request/Response logging
+  logging:
+    enabled: true
+    log_requests: true
+    log_responses: false
+    exclude_paths:
+      - /api/health

@@ -1,0 +1,79 @@
+gateway:
+  name: rest_gateway
+  type: rest
+  port: 5050
+  
+  cors:
+    enabled: true
+    origins: ["*"]
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    headers: ["Content-Type", "Authorization"]
+  
+  endpoints:
+    # =========================================================
+    # Victim Reporting (Master Agent)
+    # =========================================================
+    - path: /api/victim/report
+      method: POST
+      description: "Submit a new victim report"
+      agent: master_agent
+    
+    - path: /api/victim/priority
+      method: POST
+      description: "Calculate priority for a victim situation"
+      agent: master_agent
+    
+    # =========================================================
+    # Rescue Operations (Rescue Agent)
+    # =========================================================
+    - path: /api/rescue/calculate
+      method: POST
+      description: "Calculate equipment and personnel for scenario"
+      agent: rescue_agent
+    
+    - path: /api/rescue/route
+      method: POST
+      description: "Get route to victim location"
+      agent: rescue_agent
+    
+    - path: /api/rescue/eta
+      method: POST
+      description: "Estimate arrival time"
+      agent: rescue_agent
+    
+    # =========================================================
+    # Resource Management (Resource Agent)
+    # =========================================================
+    - path: /api/resource/inventory
+      method: GET
+      description: "Get current inventory status"
+      agent: resource_agent
+    
+    - path: /api/resource/inventory/{item}
+      method: GET
+      description: "Get status of specific inventory item"
+      agent: resource_agent
+    
+    - path: /api/resource/allocate
+      method: POST
+      description: "Allocate resources to mission"
+      agent: resource_agent
+    
+    - path: /api/resource/release
+      method: POST
+      description: "Release resources from completed mission"
+      agent: resource_agent
+    
+    # =========================================================
+    # Health Check
+    # =========================================================
+    - path: /api/health
+      method: GET
+      description: "System health check"
+      response:
+        status: "ok"
+        version: "1.0.0"
+        agents:
+          - master_agent
+          - rescue_agent
+          - resource_agent

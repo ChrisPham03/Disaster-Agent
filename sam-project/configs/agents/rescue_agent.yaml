@@ -1,0 +1,49 @@
+log:
+  stdout_log_level: INFO
+  log_file_level: DEBUG
+  log_file: rescue-agent.log
+
+!include ../shared_config.yaml
+
+apps:
+  - name: rescue-agent
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: "${NAMESPACE}"
+      agent_name: "RescueAgent"
+      display_name: "Rescue Team Coordinator"
+      supports_streaming: true
+      model: *general_model
+      
+      instruction: |
+        You are a rescue team coordinator. Track and assign rescue teams to victims.
+      
+      tools:
+        - tool_type: python
+          component_module: "src.rescue_agent.team_tools"
+          component_base_path: .
+          function_name: "get_all_teams"
+          tool_description: "Get status of all rescue teams"
+        
+        - tool_type: python
+          component_module: "src.rescue_agent.team_tools"
+          component_base_path: .
+          function_name: "assign_team_to_victim"
+          tool_description: "Assign a rescue team to a victim"
+      
+      session_service: *default_session_service
+      
+      agent_card:
+        description: "Rescue team coordinator"
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+      
+      agent_discovery:
+        enabled: true
+
+      agent_card_publishing:
+        enabled: true  # Set to false if you don't want to publish agent cards yet
+        interval_seconds: 60
