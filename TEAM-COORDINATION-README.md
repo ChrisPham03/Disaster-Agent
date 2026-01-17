@@ -12,8 +12,8 @@ This document is the **single source of truth** for our 2-person backend team. B
 
 | Role | Responsibility | Agents Owned |
 |------|----------------|--------------|
-| **Person A** | Victim intake + Resource management | Master Agent, Resource Agent |
-| **Person B** | Rescue coordination + API layer | Rescue Agent, REST Gateway |
+| **Minh** | Victim intake + Resource management | Master Agent, Resource Agent |
+| **Pee** | Rescue coordination + API layer | Rescue Agent, REST Gateway |
 
 ---
 

@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  solace:
+    image: solace/solace-pubsub-standard:latest
+    container_name: solace-broker
+    hostname: solace
+    ports:
+      - "55556:55555"
+      - "8081:8080"
+      - "8009:8008"
+    environment:
+      - username_admin_globalaccesslevel=admin
+      - username_admin_password=admin
+    shm_size: 1g
