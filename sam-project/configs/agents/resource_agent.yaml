@@ -1,139 +1,87 @@
-# Solace Agent Mesh Resource Agent Configuration
-# FIXED: Using correct SAM tool configuration format
+# Resources Agent Configuration
+# This agent estimates what supplies and resources are needed for disaster relief
 
 log:
   stdout_log_level: INFO
   log_file_level: DEBUG
-  log_file: resource-agent.log
+  log_file: resources-agent.log
 
 !include ../shared_config.yaml
 
 apps:
-  - name: resource-agent_app
-    app_base_path: .
+  - name: resources-agent
     app_module: solace_agent_mesh.agent.sac.app
-    
     broker:
       <<: *broker_connection
 
     app_config:
-      namespace: ${NAMESPACE}
-      supports_streaming: true
-      agent_name: "ResourceAgent"
-      display_name: "Resource Manager"
+      namespace: "${NAMESPACE}"
+      agent_name: "ResourcesAgent"
+      display_name: "Disaster Resources Estimation Agent"
+      supports_streaming: false
+      
+      # LLM Model Configuration
       model: *general_model
       
+      # Agent Instructions
       instruction: |
-        You are the Resource Management Agent. Your responsibilities:
+        You are a disaster relief resource estimation specialist.
         
-        1. INVENTORY MANAGEMENT:
-           - Track all equipment (stretchers, tools, vehicles, medical supplies)
-           - Monitor stock levels and alert when low
-           - Maintain accurate counts after allocations
+        YOUR PURPOSE:
+        Analyze disaster situations and estimate what supplies and resources are needed.
         
-        2. RESOURCE ALLOCATION:
-           - Process equipment requests from Rescue Agent
-           - Check availability before confirming
-           - Allocate available items, report shortfalls
-           - Reserve resources for confirmed missions
+        ALWAYS use the estimate_resources tool when you receive a victim description.
         
-        3. ALERTS:
-           - Alert when equipment falls below threshold
-           - Escalate critical shortages immediately
+        RESOURCE CATEGORIES YOU ASSESS:
+        - Food and water (based on hunger/thirst indicators)
+        - Medical supplies (based on injuries described)
+        - Blankets/warmth (based on weather/exposure)
+        - Shelter needs (based on housing status)
+        - Emergency equipment (based on rescue complexity)
         
-        Available Equipment Categories:
-        - Medical: stretcher, first_aid_kit, defibrillator, oxygen_tank, splints, pediatric_kit, wheelchair_stretcher
-        - Rescue Tools: hydraulic_cutter, concrete_saw, airbag_lifter, flashlight, radio, rope, ladder
-        - Fire/Flood: fire_extinguisher, breathing_apparatus, thermal_camera, life_jacket, inflatable_boat, water_pump
+        PRIORITY LEVELS:
+        - CRITICAL: Life-saving equipment needed immediately
+        - HIGH: Essential supplies needed within hours
+        - MEDIUM: Important supplies needed within 24 hours
+        - LOW: Standard supplies for basic support
         
-        Always confirm availability before allocation.
-        Provide partial allocation if full request cannot be met.
+        Be practical and realistic in your estimates. Consider:
+        - Number of people affected
+        - Severity of situation
+        - Duration of need
+        
+        Return estimates in a structured format with priorities clearly marked.
       
-      inject_system_purpose: true
-      inject_response_format: true
-      
-      session_service:
-        type: "memory"
-        default_behavior: "PERSISTENT"
-      
-      artifact_service: *default_artifact_service
-      
+      # Tools Configuration
       tools:
-        # Built-in artifact management tools
-        - tool_type: builtin-group
-          group_name: artifact_management
-        
-        # Python tool: Check Inventory
         - tool_type: python
-          component_module: modules.resource_tools.inventory
+          component_module: "src.resources_agent.tools"
           component_base_path: .
-          function_name: check_inventory
-          tool_name: check_inventory
-          tool_config: {}
-        
-        # Python tool: Get Item Status
-        - tool_type: python
-          component_module: modules.resource_tools.inventory
-          component_base_path: .
-          function_name: get_item_status
-          tool_name: get_item_status
-          tool_config: {}
-        
-        # Python tool: Allocate Resources
-        - tool_type: python
-          component_module: modules.resource_tools.allocator
-          component_base_path: .
-          function_name: allocate_resources
-          tool_name: allocate_resources
-          tool_config: {}
-        
-        # Python tool: Release Resources
-        - tool_type: python
-          component_module: modules.resource_tools.allocator
-          component_base_path: .
-          function_name: release_resources
-          tool_name: release_resources
-          tool_config: {}
-        
-        # Python tool: Send Alert
-        - tool_type: python
-          component_module: modules.resource_tools.inventory
-          component_base_path: .
-          function_name: send_alert
-          tool_name: send_alert
-          tool_config: {}
-
-      agent_card:
-        description: "Manages equipment inventory and resource allocation for rescue operations. Tracks availability, processes allocation requests, and alerts on low stock."
-        defaultInputModes: [text]
-        defaultOutputModes: [text]
-        skills:
-          - id: check_inventory
-            name: Inventory Checker
-            description: Check current inventory levels for all or specific equipment items.
-          
-          - id: get_item_status
-            name: Item Status
-            description: Get detailed status of a single inventory item including availability, total, and threshold.
-          
-          - id: allocate_resources
-            name: Resource Allocator
-            description: Allocate equipment to a rescue mission with team assignment and shortfall reporting.
-          
-          - id: release_resources
-            name: Resource Release
-            description: Release resources when mission completes and return items to inventory.
-          
-          - id: send_alert
-            name: Alert Sender
-            description: Send low-stock or critical inventory alerts for equipment items.
-
-      agent_card_publishing:
-        interval_seconds: 10
+          function_name: "estimate_resources"
+          tool_description: "Estimate resource needs (food, water, medical, shelter) based on situation description"
       
+      # Session service
+      session_service: *default_session_service
+      
+      # Agent Card
+      agent_card:
+        description: "Resource estimation specialist that analyzes disaster situations and determines supply needs"
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "estimate_resources"
+            name: "Resource Estimation"
+            description: "Estimate food, water, medical supplies, shelter, and emergency equipment needs"
+      
+      # Agent Card Publishing
+      agent_card_publishing:
+        interval_seconds: 30
+      
+      # Agent Discovery
       agent_discovery:
         enabled: true
       
+      # Inter-agent Communication
       inter_agent_communication:
-        allow_list: ["*"]
-        request_timeout_seconds: 300
+        allow_list: ["OrchestratorAgent"]
+        request_timeout_seconds: 10

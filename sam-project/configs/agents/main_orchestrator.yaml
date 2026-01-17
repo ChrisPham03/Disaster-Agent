@@ -1,78 +1,161 @@
-# Solace Agent Mesh Orchestrator Agent Configurations
+# Orchestrator Agent Configuration
+# This agent coordinates disaster response by validating reports,
+# calling analysis agents, and managing the priority queue
 
 log:
   stdout_log_level: INFO
-  log_file_level: INFO
+  log_file_level: DEBUG
   log_file: orchestrator-agent.log
 
-# Shared SAM config
 !include ../shared_config.yaml
 
 apps:
-  - name: orchestrator-agent_app
-    app_base_path: .
+  - name: orchestrator-agent
     app_module: solace_agent_mesh.agent.sac.app
     broker:
       <<: *broker_connection
 
     app_config:
-      namespace: ${NAMESPACE} 
-      supports_streaming: true
+      namespace: "${NAMESPACE}"
       agent_name: "OrchestratorAgent"
-      display_name: "OrchestratorAgent"
-      model: *planning_model 
-
+      display_name: "Disaster Response Orchestrator"
+      supports_streaming: true  # Enable streaming for conversational flow
+      
+      # LLM Model Configuration
+      model: *general_model
+      
+      # Agent Instructions - Critical for coordinating the workflow
       instruction: |
-        You are the Orchestrator Agent within an AI agentic system. Your primary responsibilities are to:
-        1. Process tasks received from external sources via the system Gateway.
-        2. Analyze each task to determine the optimal execution strategy:
-           a. Single Agent Delegation: If the task can be fully addressed by a single peer agent (based on their declared capabilities/description), delegate the task to that agent.
-           b. Multi-Agent Coordination: If task completion requires a coordinated effort from multiple peer agents: first, devise a logical execution plan (detailing the sequence of agent invocations and any necessary data handoffs). Then, manage the execution of this plan, invoking each agent in the defined order.
-           c. Direct Execution: If the task is not suitable for delegation (neither to a single agent nor a multi-agent sequence) and falls within your own capabilities, execute the task yourself.
-
-        Artifact Management Guidelines:
-        - You must review your artifacts and return the ones that are important for the user by using artifact_return embed. You can use list_artifacts to see all available artifacts.
-        - Provide regular progress updates using `status_update` embed directives, especially before initiating any tool call.
-      inject_system_purpose: true
-      inject_response_format: true
-      inject_user_profile: true
-      session_service: 
-        type: "sql"
-        database_url: "${ORCHESTRATOR_DATABASE_URL, sqlite:///orchestrator.db}"
-        default_behavior: "PERSISTENT"
-      artifact_service: *default_artifact_service
-      artifact_handling_mode: "reference" 
-      enable_embed_resolution: true 
-      enable_artifact_content_instruction: true 
-      data_tools_config: *default_data_tools_config
-      tools: 
-        - group_name: artifact_management
-          tool_type: builtin-group
+        You are the Disaster Response Orchestrator. Your job is to gather complete information 
+        about disaster victims and coordinate their rescue prioritization.
+        
+        CRITICAL INFORMATION REQUIRED:
+        1. Location (latitude/longitude OR city/address)
+        2. Description of the situation (injuries, hazards, urgency)
+        3. Number of people affected
+        
+        WORKFLOW - FOLLOW THESE STEPS IN ORDER:
+        
+        STEP 1: VALIDATE INFORMATION
+        - When a user reports a disaster, call validate_victim_report with whatever info they provided
+        - The tool will tell you what's missing
+        
+        STEP 2: GATHER MISSING INFORMATION
+        - If validation returns is_valid=False:
+          * Ask the user the specific question from "next_question" field
+          * Wait for their response
+          * Call validate_victim_report again with the new information
+        - Repeat until is_valid=True
+        - Ask questions ONE AT A TIME to avoid overwhelming the user
+        
+        STEP 3: PROCESS COMPLETE REPORT
+        - ONLY after is_valid=True, call process_validated_report
+        - This will:
+          * Send location immediately to rescue teams
+          * Analyze severity, resources, and hospital needs
+          * Add to priority queue
+        
+        CONVERSATION STYLE:
+        - Be empathetic but efficient - lives are at stake
+        - Keep questions clear and direct
+        - Acknowledge the user's stress and fear
+        - Provide reassurance when possible
+        
+        EXAMPLE CONVERSATION:
+        User: "Help! There's been an accident!"
+        You: "I'm here to help. What is your exact location?"
+        User: "123 Main Street, Springfield"
+        You: "Thank you. Can you describe what happened and if anyone is injured?"
+        User: "Car crash, two people injured, one unconscious"
+        You: "How many people need assistance total?"
+        User: "Two people"
+        You: [calls process_validated_report] "Emergency services have been notified and 
+             are being dispatched to 123 Main Street. The situation has been prioritized 
+             based on the unconscious victim. Help is on the way. Please stay safe."
+        
+        Remember: Complete information saves lives by ensuring accurate prioritization.
+      
+      # Lifecycle Functions - Run on startup/shutdown
+      agent_init_function:
+        module: "src.orchestrator_agent.lifecycle"
+        name: "initialize_orchestrator_agent"
+        base_path: .
+        config:
+          startup_message: "Orchestrator Agent is ready to coordinate disaster response!"
+          max_queue_size: 1000
+      
+      agent_cleanup_function:
+        module: "src.orchestrator_agent.lifecycle"
+        base_path: .
+        name: "cleanup_orchestrator_agent"
+      
+      # Tools Configuration
+      tools:
+        # Validation tool - Check if report has all required info
+        - tool_type: python
+          component_module: "src.orchestrator_agent.tools"
+          component_base_path: .
+          function_name: "validate_victim_report"
+          tool_description: "Validate if victim report has all required information (location, description, num_people)"
+        
+        # Processing tool - Process a complete report
+        - tool_type: python
+          component_module: "src.orchestrator_agent.tools"
+          component_base_path: .
+          function_name: "process_validated_report"
+          tool_description: "Process a validated victim report - ONLY call after validation confirms completeness"
+        
+        # Queue management tools
+        - tool_type: python
+          component_module: "src.orchestrator_agent.tools"
+          component_base_path: .
+          function_name: "get_priority_queue"
+          tool_description: "Get the current priority queue of victims awaiting rescue"
+        
+        - tool_type: python
+          component_module: "src.orchestrator_agent.tools"
+          component_base_path: .
+          function_name: "update_victim_status"
+          tool_description: "Update the status of a victim (pending, in_progress, resolved)"
+        
+        # Built-in artifact tools for file operations
         - tool_type: builtin-group
-          group_name: "data_analysis"
-
+          group_name: "artifact_management"
+      
+      # Services Configuration
+      session_service: *default_session_service
+      artifact_service: *default_artifact_service  # Required for priority queue persistence
+      
+      # Artifact handling
+      artifact_handling_mode: "reference"
+      enable_embed_resolution: true
+      enable_artifact_content_instruction: true
+      
+      # Agent Card - Describes capabilities to other agents
       agent_card:
-        description: "The Orchestrator component. It manages tasks and coordinates multi-agent workflows."
-        defaultInputModes: [text]
-        defaultOutputModes: [text, file]
+        description: "Disaster response orchestrator that validates reports, coordinates analysis, and manages rescue prioritization"
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text", "file"]
         skills:
-        - id: strategic_planning
-          name: Strategic Planning
-          description: Analyzes complex requests and creates structured execution plans, breaking down multi-step goals into logical sequences with clear checkpoints and progress tracking.
-
-        - id: agent_coordination
-          name: Agent Coordination
-          description: Identifies the most suitable specialized agents for specific tasks and coordinates multi-agent workflows, managing data handoffs and execution sequences to achieve complex objectives efficiently.
-
-        - id: artifact_management
-          name: Artifact Management
-          description: Creates, transforms, and manages various artifact types including documents, reports, and data files, with capabilities for content generation, formatting, embedding dynamic data, and applying sophisticated data transformations.
-
-      agent_card_publishing: 
-        interval_seconds: 10
-      agent_discovery: 
+          - id: "validate_report"
+            name: "Validate Victim Report"
+            description: "Check if disaster report has all required information"
+          - id: "process_report"
+            name: "Process Disaster Report"
+            description: "Coordinate severity analysis, resource estimation, and priority queue management"
+          - id: "manage_queue"
+            name: "Manage Priority Queue"
+            description: "View and update the priority queue of victims awaiting rescue"
+      
+      # Agent Card Publishing
+      agent_card_publishing:
+        interval_seconds: 30
+      
+      # Agent Discovery - Allow other agents to find this orchestrator
+      agent_discovery:
         enabled: true
+      
+      # Inter-agent Communication
       inter_agent_communication:
-        allow_list: ["*"]
-
-        request_timeout_seconds: 600
+        allow_list: ["SeverityAgent", "ResourcesAgent", "HospitalAgent"]
+        request_timeout_seconds: 30

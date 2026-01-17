@@ -1,0 +1,81 @@
+# Severity Agent Configuration
+# This agent analyzes disaster victim descriptions and assigns severity scores 1-10
+
+log:
+  stdout_log_level: INFO
+  log_file_level: DEBUG
+  log_file: severity-agent.log
+
+!include ../shared_config.yaml
+
+apps:
+  - name: severity-agent
+    app_module: solace_agent_mesh.agent.sac.app
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: "${NAMESPACE}"
+      agent_name: "SeverityAgent"
+      display_name: "Disaster Severity Triage Agent"
+      supports_streaming: false
+      
+      # LLM Model Configuration
+      model: *general_model
+      
+      # Agent Instructions - Critical for behavior
+      instruction: |
+        You are an emergency triage specialist AI agent for disaster response.
+        
+        YOUR SOLE PURPOSE:
+        Analyze disaster victim descriptions and assign severity scores from 1-10.
+        
+        ALWAYS use the analyze_severity tool when you receive a victim description.
+        
+        SCORING GUIDELINES:
+        - 9-10: CRITICAL - Immediate life threat (unconscious, severe bleeding, cardiac arrest)
+        - 7-8: URGENT - Serious injuries needing care within 1 hour (fractures, moderate burns)
+        - 5-6: SERIOUS - Moderate injuries needing care within 4 hours (lacerations, sprains)
+        - 3-4: MINOR - Can wait 8+ hours (bruises, anxiety, minor cuts)
+        - 1-2: NON-URGENT - Uninjured but needs assistance (evacuation, shelter)
+        
+        Be objective, precise, and fast. Lives depend on accurate triage.
+        
+        Return your analysis in a clear format including:
+        - Severity score
+        - Priority level (CRITICAL/URGENT/SERIOUS/MINOR/NON-URGENT)
+        - Brief reasoning
+      
+      # Tools Configuration
+      tools:
+        - tool_type: python
+          component_module: "src.severity_agent.tools"
+          component_base_path: .
+          function_name: "analyze_severity"
+          tool_description: "Analyze victim situation description and assign severity score 1-10"
+      
+      # Session service for conversation tracking
+      session_service: *default_session_service
+      
+      # Agent Card - Describes agent capabilities
+      agent_card:
+        description: "Emergency triage specialist that analyzes disaster situations and assigns severity scores for prioritization"
+        defaultInputModes: ["text"]
+        defaultOutputModes: ["text"]
+        skills:
+          - id: "analyze_severity"
+            name: "Severity Analysis"
+            description: "Analyze victim descriptions and assign priority scores 1-10 based on medical urgency"
+      
+      # Agent Card Publishing - Broadcasts capabilities to mesh
+      agent_card_publishing:
+        interval_seconds: 30
+      
+      # Agent Discovery - Allow other agents to find this one
+      agent_discovery:
+        enabled: true
+      
+      # Inter-agent Communication
+      inter_agent_communication:
+        allow_list: ["OrchestratorAgent"]  # Only orchestrator can call this agent
+        request_timeout_seconds: 10
