@@ -4,10 +4,6 @@ Lifecycle functions for the Orchestrator Agent.
 Lifecycle functions run at specific points in the agent's lifetime:
 - initialize: Run once when agent starts (setup resources)
 - cleanup: Run once when agent stops (cleanup resources)
-
-These are configured in the YAML file under:
-  agent_init_function: (calls initialize)
-  agent_cleanup_function: (calls cleanup)
 """
 
 from typing import Any
@@ -19,8 +15,6 @@ from .services.priority_queue_service import PriorityQueueService
 class OrchestratorInitConfig(BaseModel):
     """
     Configuration model for Orchestrator initialization.
-    
-    This validates the config passed from the YAML file.
     """
     startup_message: str = Field(
         default="Orchestrator Agent is ready to coordinate disaster response!",
@@ -39,21 +33,19 @@ def initialize_orchestrator_agent(
     """
     Initialize the Orchestrator Agent with priority queue service.
     
-    This function is called ONCE when the agent starts up.
-    It sets up any resources, services, or state that the agent needs.
-    
     Args:
-        host_component: The agent host component (gives access to agent state)
+        host_component: The agent host component
         init_config: Validated configuration from YAML file
     """
     log_identifier = f"[{host_component.agent_name}:init]"
     log.info(f"{log_identifier} Starting Orchestrator initialization...")
     
     try:
-        # Get artifact service from the agent's context
-        # This is provided by SAM automatically
+        # Get artifact service from the agent's services
         artifact_service = host_component.artifact_service
-        app_name = host_component.app_name
+        
+        # Use the agent name as app identifier
+        app_name = host_component.agent_name
         
         if not artifact_service:
             raise ValueError("Artifact service not available - ensure it's configured in YAML")
@@ -65,7 +57,6 @@ def initialize_orchestrator_agent(
         )
         
         # Store the service in agent-specific state
-        # This makes it available to all tools via tool_context
         host_component.set_agent_specific_state("queue_service", queue_service)
         
         # Store configuration
@@ -73,7 +64,7 @@ def initialize_orchestrator_agent(
             "max_queue_size": init_config.max_queue_size
         })
         
-        # Initialize tracking for pending requests (victims being analyzed)
+        # Initialize tracking for pending requests
         host_component.set_agent_specific_state("pending_requests", {})
         
         # Log startup message
@@ -94,9 +85,6 @@ def cleanup_orchestrator_agent(host_component: Any):
     """
     Clean up Orchestrator Agent resources.
     
-    This function is called ONCE when the agent shuts down.
-    It cleans up any resources to prevent memory leaks.
-    
     Args:
         host_component: The agent host component
     """
@@ -109,7 +97,6 @@ def cleanup_orchestrator_agent(host_component: Any):
         
         if queue_service:
             # No async cleanup needed for artifact-based storage
-            # Just log final statistics
             log.info(f"{log_identifier} Priority queue service cleaned up")
         
         # Log final statistics

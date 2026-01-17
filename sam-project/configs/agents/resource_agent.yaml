@@ -1,6 +1,4 @@
 # Resources Agent Configuration
-# This agent estimates what supplies and resources are needed for disaster relief
-
 log:
   stdout_log_level: INFO
   log_file_level: DEBUG
@@ -20,10 +18,8 @@ apps:
       display_name: "Disaster Resources Estimation Agent"
       supports_streaming: false
       
-      # LLM Model Configuration
       model: *general_model
       
-      # Agent Instructions
       instruction: |
         You are a disaster relief resource estimation specialist.
         
@@ -52,18 +48,15 @@ apps:
         
         Return estimates in a structured format with priorities clearly marked.
       
-      # Tools Configuration
       tools:
         - tool_type: python
-          component_module: "src.resources_agent.tools"
+          component_module: "src.resource_agent.tools"
           component_base_path: .
           function_name: "estimate_resources"
           tool_description: "Estimate resource needs (food, water, medical, shelter) based on situation description"
       
-      # Session service
       session_service: *default_session_service
       
-      # Agent Card
       agent_card:
         description: "Resource estimation specialist that analyzes disaster situations and determines supply needs"
         defaultInputModes: ["text"]
@@ -73,15 +66,12 @@ apps:
             name: "Resource Estimation"
             description: "Estimate food, water, medical supplies, shelter, and emergency equipment needs"
       
-      # Agent Card Publishing
       agent_card_publishing:
         interval_seconds: 30
       
-      # Agent Discovery
       agent_discovery:
         enabled: true
       
-      # Inter-agent Communication
       inter_agent_communication:
-        allow_list: ["OrchestratorAgent"]
+        allow_list: ["MainOrchestratorAgent"]
         request_timeout_seconds: 10

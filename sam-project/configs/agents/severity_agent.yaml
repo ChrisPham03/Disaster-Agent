@@ -1,6 +1,4 @@
 # Severity Agent Configuration
-# This agent analyzes disaster victim descriptions and assigns severity scores 1-10
-
 log:
   stdout_log_level: INFO
   log_file_level: DEBUG
@@ -13,17 +11,15 @@ apps:
     app_module: solace_agent_mesh.agent.sac.app
     broker:
       <<: *broker_connection
-
+    
     app_config:
       namespace: "${NAMESPACE}"
       agent_name: "SeverityAgent"
       display_name: "Disaster Severity Triage Agent"
       supports_streaming: false
       
-      # LLM Model Configuration
       model: *general_model
       
-      # Agent Instructions - Critical for behavior
       instruction: |
         You are an emergency triage specialist AI agent for disaster response.
         
@@ -46,7 +42,6 @@ apps:
         - Priority level (CRITICAL/URGENT/SERIOUS/MINOR/NON-URGENT)
         - Brief reasoning
       
-      # Tools Configuration
       tools:
         - tool_type: python
           component_module: "src.severity_agent.tools"
@@ -54,10 +49,8 @@ apps:
           function_name: "analyze_severity"
           tool_description: "Analyze victim situation description and assign severity score 1-10"
       
-      # Session service for conversation tracking
       session_service: *default_session_service
       
-      # Agent Card - Describes agent capabilities
       agent_card:
         description: "Emergency triage specialist that analyzes disaster situations and assigns severity scores for prioritization"
         defaultInputModes: ["text"]
@@ -67,15 +60,12 @@ apps:
             name: "Severity Analysis"
             description: "Analyze victim descriptions and assign priority scores 1-10 based on medical urgency"
       
-      # Agent Card Publishing - Broadcasts capabilities to mesh
       agent_card_publishing:
         interval_seconds: 30
       
-      # Agent Discovery - Allow other agents to find this one
       agent_discovery:
         enabled: true
       
-      # Inter-agent Communication
       inter_agent_communication:
-        allow_list: ["OrchestratorAgent"]  # Only orchestrator can call this agent
+        allow_list: ["MainOrchestratorAgent"]
         request_timeout_seconds: 10

@@ -77,7 +77,7 @@ apps:
       
       # Lifecycle Functions - Run on startup/shutdown
       agent_init_function:
-        module: "src.orchestrator_agent.lifecycle"
+        module: "src.main_orchestrator.lifecycle"
         name: "initialize_orchestrator_agent"
         base_path: .
         config:
@@ -85,7 +85,7 @@ apps:
           max_queue_size: 1000
       
       agent_cleanup_function:
-        module: "src.orchestrator_agent.lifecycle"
+        module: "src.main_orchestrator.lifecycle"
         base_path: .
         name: "cleanup_orchestrator_agent"
       
@@ -93,27 +93,27 @@ apps:
       tools:
         # Validation tool - Check if report has all required info
         - tool_type: python
-          component_module: "src.orchestrator_agent.tools"
+          component_module: "src.main_orchestrator.tools"
           component_base_path: .
           function_name: "validate_victim_report"
           tool_description: "Validate if victim report has all required information (location, description, num_people)"
         
         # Processing tool - Process a complete report
         - tool_type: python
-          component_module: "src.orchestrator_agent.tools"
+          component_module: "src.main_orchestrator.tools"
           component_base_path: .
           function_name: "process_validated_report"
           tool_description: "Process a validated victim report - ONLY call after validation confirms completeness"
         
         # Queue management tools
         - tool_type: python
-          component_module: "src.orchestrator_agent.tools"
+          component_module: "src.main_orchestrator.tools"
           component_base_path: .
           function_name: "get_priority_queue"
           tool_description: "Get the current priority queue of victims awaiting rescue"
         
         - tool_type: python
-          component_module: "src.orchestrator_agent.tools"
+          component_module: "src.main_orchestrator.tools"
           component_base_path: .
           function_name: "update_victim_status"
           tool_description: "Update the status of a victim (pending, in_progress, resolved)"
