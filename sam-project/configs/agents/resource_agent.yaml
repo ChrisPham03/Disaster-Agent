@@ -1,0 +1,125 @@
+agent:
+  name: resource_agent
+  description: >
+    Manages inventory of rescue equipment, vehicles, and personnel.
+    Handles allocation requests and alerts on low stock.
+  
+  agent_card:
+    name: "Resource Manager"
+    description: "Manages equipment inventory and resource allocation"
+    capabilities:
+      - inventory_management
+      - resource_allocation
+      - availability_check
+      - low_stock_alerts
+
+  llm:
+    provider: ${SAM_LLM_PROVIDER}
+    model: ${SAM_LLM_MODEL}
+    api_key: ${SAM_LLM_API_KEY}
+    temperature: 0.1
+
+  instructions: |
+    You are the Resource Management Agent. Your responsibilities:
+    
+    1. INVENTORY MANAGEMENT:
+       - Track all equipment (stretchers, tools, vehicles, medical supplies)
+       - Monitor stock levels and alert when low
+       - Maintain accurate counts after allocations
+    
+    2. RESOURCE ALLOCATION:
+       - Process equipment requests from Rescue Agent
+       - Check availability before confirming
+       - Allocate available items, report shortfalls
+       - Reserve resources for confirmed missions
+    
+    3. ALERTS:
+       - Alert when equipment falls below threshold
+       - Escalate critical shortages immediately
+    
+    Available Equipment Categories:
+    - Medical: stretcher, first_aid_kit, defibrillator, oxygen_tank, splints, pediatric_kit, wheelchair_stretcher
+    - Rescue Tools: hydraulic_cutter, concrete_saw, airbag_lifter, flashlight, radio, rope, ladder
+    - Fire/Flood: fire_extinguisher, breathing_apparatus, thermal_camera, life_jacket, inflatable_boat, water_pump
+    
+    Always confirm availability before allocation.
+    Provide partial allocation if full request cannot be met.
+
+  tools:
+    - group_name: artifact_management
+      tool_type: builtin-group
+    
+    - tool_type: python
+      name: check_inventory
+      description: "Check current inventory levels for all or specific equipment"
+      module: modules.resource_tools.inventory
+      function: check_inventory
+      parameters:
+        - name: item_type
+          type: string
+          description: "Specific item to check, or omit for all items"
+          required: false
+    
+    - tool_type: python
+      name: get_item_status
+      description: "Get detailed status of a single inventory item"
+      module: modules.resource_tools.inventory
+      function: get_item_status
+      parameters:
+        - name: item_name
+          type: string
+          description: "Name of the equipment item"
+          required: true
+    
+    - tool_type: python
+      name: allocate_resources
+      description: "Allocate equipment to a rescue mission"
+      module: modules.resource_tools.allocator
+      function: allocate_resources
+      parameters:
+        - name: request_id
+          type: string
+          description: "Request ID (format: REQ-{timestamp})"
+          required: true
+        - name: mission_id
+          type: string
+          description: "Mission ID (format: M-{timestamp})"
+          required: true
+        - name: equipment_list
+          type: array
+          description: "List of {item: string, quantity: int, priority: string}"
+          required: true
+        - name: team_id
+          type: string
+          description: "Optional team ID, auto-generated if not provided"
+          required: false
+    
+    - tool_type: python
+      name: release_resources
+      description: "Release resources when mission completes"
+      module: modules.resource_tools.allocator
+      function: release_resources
+      parameters:
+        - name: mission_id
+          type: string
+          description: "Mission ID to release resources for"
+          required: true
+    
+    - tool_type: python
+      name: send_alert
+      description: "Send low-stock or critical inventory alert"
+      module: modules.resource_tools.inventory
+      function: send_alert
+      parameters:
+        - name: item_name
+          type: string
+          description: "Equipment name"
+          required: true
+        - name: alert_type
+          type: string
+          description: "low_stock, critical, or out_of_stock"
+          required: true
+        - name: message
+          type: string
+          description: "Alert message"
+          required: true

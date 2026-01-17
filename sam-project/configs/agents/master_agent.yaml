@@ -1,0 +1,106 @@
+agent:
+  name: master_agent
+  description: >
+    Communicates with disaster victims, extracts critical information
+    (location, severity, number of people), and prioritizes rescue operations.
+  
+  agent_card:
+    name: "Disaster Triage Master"
+    description: "Primary agent for victim communication and rescue prioritization"
+    capabilities:
+      - victim_communication
+      - severity_assessment
+      - location_extraction
+      - rescue_prioritization
+
+  llm:
+    provider: ${SAM_LLM_PROVIDER}
+    model: ${SAM_LLM_MODEL}
+    api_key: ${SAM_LLM_API_KEY}
+    temperature: 0.3
+
+  instructions: |
+    You are the Master Disaster Rescue Agent. Your responsibilities:
+    
+    1. VICTIM COMMUNICATION:
+       - Communicate calmly and empathetically with victims
+       - Ask clear questions to gather: location, number of people, injuries, hazards
+       - Provide reassurance while extracting details
+    
+    2. INFORMATION EXTRACTION:
+       - Location: Get GPS coordinates or detailed address
+       - Severity: Assess as CRITICAL, MODERATE, or STABLE
+       - Headcount: Number of people needing rescue
+       - Conditions: Injuries, fire, flood, collapse hazards
+    
+    3. PRIORITIZATION (use calculate_priority tool):
+       - CRITICAL (70-100): Life-threatening, immediate danger
+       - HIGH (40-69): Serious but not immediately life-threatening
+       - MEDIUM (20-39): Needs attention but stable
+       - LOW (0-19): Minor assistance needed
+    
+    4. HANDOFF:
+       - After gathering info, create victim report
+       - Delegate to Rescue Agent for team assignment
+    
+    Always maintain calm, professional tone in crisis situations.
+
+  tools:
+    - group_name: artifact_management
+      tool_type: builtin-group
+    
+    - tool_type: python
+      name: extract_location
+      description: "Extract and validate location from victim input"
+      module: modules.master_tools.location_utils
+      function: extract_location
+    
+    - tool_type: python
+      name: calculate_priority
+      description: "Calculate victim priority score (0-100) based on severity factors"
+      module: modules.master_tools.prioritizer
+      function: calculate_priority
+      parameters:
+        - name: severity
+          type: string
+          description: "CRITICAL, MODERATE, or STABLE"
+          required: true
+        - name: num_people
+          type: integer
+          description: "Number of people affected"
+          required: true
+        - name: has_injuries
+          type: boolean
+          description: "Whether injuries are reported"
+          required: true
+        - name: additional_factors
+          type: object
+          description: "Optional: {fire_hazard: bool, flooding: bool, structural_collapse: bool}"
+          required: false
+    
+    - tool_type: python
+      name: create_victim_report
+      description: "Create standardized victim report for rescue team handoff"
+      module: modules.master_tools.victim_chat
+      function: create_victim_report
+      parameters:
+        - name: location
+          type: object
+          description: "Location dict with lat, lng, address"
+          required: true
+        - name: severity
+          type: string
+          description: "CRITICAL, MODERATE, or STABLE"
+          required: true
+        - name: num_people
+          type: integer
+          description: "Number of people needing rescue"
+          required: true
+        - name: has_injuries
+          type: boolean
+          description: "Whether injuries are reported"
+          required: true
+        - name: conditions
+          type: array
+          description: "List of conditions: fire_hazard, flooding, structural_collapse"
+          required: false
