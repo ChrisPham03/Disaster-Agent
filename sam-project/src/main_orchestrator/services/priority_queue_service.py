@@ -113,7 +113,7 @@ class PriorityQueueService:
         self,
         victim_id: str,
         score: int,
-        location: Dict[str, float],
+        location: Dict[str, Any],
         description: str,
         resources: Dict[str, Any],
         hospital_needs: Dict[str, Any],
@@ -125,7 +125,7 @@ class PriorityQueueService:
         Args:
             victim_id: Unique identifier
             score: Severity score (1-10)
-            location: {"lat": float, "lng": float}
+            location: {"lat": float, "lng": float, "description": str}
             description: Situation description
             resources: Resource needs from resources agent
             hospital_needs: Hospital needs assessment
@@ -144,17 +144,35 @@ class PriorityQueueService:
             None
         )
         
+        # Determine priority level from score
+        if score >= 9:
+            priority_level = "CRITICAL"
+            color_code = "red"
+        elif score >= 7:
+            priority_level = "URGENT"
+            color_code = "orange"
+        elif score >= 5:
+            priority_level = "SERIOUS"
+            color_code = "orange"
+        elif score >= 3:
+            priority_level = "MINOR"
+            color_code = "yellow"
+        else:
+            priority_level = "NON-URGENT"
+            color_code = "green"
+        
         # Create queue entry
         queue_entry = {
             "victim_id": victim_id,
             "score": score,
+            "priority_level": priority_level,
             "location": location,
             "description": description,
             "resources": resources,
             "hospital_needs": hospital_needs,
             "num_people": num_people,
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "color_code": self._get_color_code(score),
+            "color_code": color_code,
             "status": "pending"  # pending, in_progress, resolved
         }
         
@@ -180,7 +198,37 @@ class PriorityQueueService:
             "total_queue_size": len(self.queue_cache)
         }
     
-    async def get_top_priorities(self, n: int = 20) -> List[Dict[str, Any]]:
+    async def get_priority_queue(self, limit: int = 20, status_filter: str = None) -> Dict[str, Any]:
+        """
+        Get the priority queue with optional filtering.
+        
+        Args:
+            limit: Maximum number of victims to return
+            status_filter: Optional status filter ('pending', 'in_progress', 'resolved', 'all')
+            
+        Returns:
+            Dictionary with victims list and total count
+        """
+        if not self.queue_cache:
+            await self.load_queue()
+        
+        victims = self.queue_cache
+        
+        # Apply status filter if provided
+        if status_filter and status_filter != 'all':
+            victims = [v for v in victims if v.get("status") == status_filter]
+        
+        # Apply limit
+        victims = victims[:limit]
+        
+        return {
+            "status": "success",
+            "victims": victims,
+            "total_victims": len(self.queue_cache),
+            "filtered_count": len(victims)
+        }
+    
+    async def get_top_priorities(self, n: int = 20) -> Dict[str, Any]:
         """
         Get the top N highest priority victims from the queue.
         
@@ -188,12 +236,9 @@ class PriorityQueueService:
             n: Number of top priorities to return
             
         Returns:
-            List of top N victim entries
+            Dictionary with victims list
         """
-        if not self.queue_cache:
-            await self.load_queue()
-        
-        return self.queue_cache[:n]
+        return await self.get_priority_queue(limit=n)
     
     async def get_queue_size(self) -> int:
         """Get the total number of victims in the queue."""
@@ -202,7 +247,7 @@ class PriorityQueueService:
         
         return len(self.queue_cache)
     
-    async def update_victim_status(self, victim_id: str, status: str) -> bool:
+    async def update_victim_status(self, victim_id: str, status: str) -> Dict[str, Any]:
         """
         Update the status of a victim (pending, in_progress, resolved).
         
@@ -211,7 +256,7 @@ class PriorityQueueService:
             status: New status value
             
         Returns:
-            True if updated successfully
+            Dictionary with update result
         """
         if not self.queue_cache:
             await self.load_queue()
@@ -222,10 +267,19 @@ class PriorityQueueService:
                 entry["status_updated"] = datetime.now(timezone.utc).isoformat()
                 await self.save_queue()
                 log.info(f"{self.log_identifier} Updated victim {victim_id} status to {status}")
-                return True
+                return {
+                    "success": True,
+                    "victim_id": victim_id,
+                    "new_status": status,
+                    "message": f"Status updated to {status}"
+                }
         
         log.warning(f"{self.log_identifier} Victim {victim_id} not found for status update")
-        return False
+        return {
+            "success": False,
+            "victim_id": victim_id,
+            "message": f"Victim {victim_id} not found"
+        }
     
     async def remove_victim(self, victim_id: str) -> bool:
         """
@@ -251,10 +305,31 @@ class PriorityQueueService:
             log.warning(f"{self.log_identifier} Victim {victim_id} not found for removal")
             return False
     
+    async def get_victim_by_id(self, victim_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a specific victim by ID.
+        
+        Args:
+            victim_id: Victim identifier
+            
+        Returns:
+            Victim entry or None if not found
+        """
+        if not self.queue_cache:
+            await self.load_queue()
+        
+        for entry in self.queue_cache:
+            if entry["victim_id"] == victim_id:
+                return entry
+        
+        return None
+    
     def _get_color_code(self, score: int) -> str:
         """Get color code based on severity score."""
-        if score >= 8:
+        if score >= 9:
             return "red"
+        elif score >= 7:
+            return "orange"
         elif score >= 5:
             return "orange"
         else:

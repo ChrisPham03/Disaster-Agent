@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 
-// Mock data for demonstration - in production, this comes from your REST API
+// API configuration - adjust to match your REST gateway
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5050";
+
+// Fallback mock data for when API is unavailable
 const MOCK_VICTIMS = [
   {
     victim_id: "V-8a3f2c1d",
@@ -24,28 +27,6 @@ const MOCK_VICTIMS = [
     color_code: "orange",
     timestamp: new Date(Date.now() - 600000).toISOString(),
   },
-  {
-    victim_id: "V-6c5f4e3d",
-    score: 5,
-    priority_level: "SERIOUS",
-    location: { lat: 13.7280, lng: 100.5245, description: "Silom Road, Bangkok" },
-    description: "Flood victims, 8 people stranded on rooftop",
-    num_people: 8,
-    status: "pending",
-    color_code: "orange",
-    timestamp: new Date(Date.now() - 900000).toISOString(),
-  },
-  {
-    victim_id: "V-5d6g5f4e",
-    score: 3,
-    priority_level: "MINOR",
-    location: { lat: 13.7650, lng: 100.5380, description: "Chatuchak Market" },
-    description: "Minor injuries from crowd crush, anxiety",
-    num_people: 3,
-    status: "pending",
-    color_code: "yellow",
-    timestamp: new Date(Date.now() - 1200000).toISOString(),
-  },
 ];
 
 const MOCK_RESCUE_TEAMS = [
@@ -63,21 +44,11 @@ const MOCK_RESCUE_TEAMS = [
     team_id: "T-Bravo",
     name: "Bravo Medical Team",
     location: { lat: 13.7480, lng: 100.5320 },
-    status: "on_scene",
-    assigned_to: "V-7b4e3d2c",
-    eta_minutes: 0,
-    personnel: 4,
-    vehicle: "Ambulance Unit",
-  },
-  {
-    team_id: "T-Charlie",
-    name: "Charlie SAR Team",
-    location: { lat: 13.7400, lng: 100.5200 },
     status: "available",
     assigned_to: null,
     eta_minutes: null,
-    personnel: 8,
-    vehicle: "Rescue Boat + Truck",
+    personnel: 4,
+    vehicle: "Ambulance Unit",
   },
 ];
 
@@ -86,23 +57,53 @@ const MOCK_INVENTORY = {
   first_aid_kit: { total: 50, available: 42, allocated: 8 },
   hydraulic_cutter: { total: 4, available: 2, allocated: 2 },
   oxygen_tank: { total: 20, available: 15, allocated: 5 },
-  defibrillator: { total: 6, available: 4, allocated: 2 },
-  life_vest: { total: 30, available: 22, allocated: 8 },
-  thermal_blanket: { total: 100, available: 85, allocated: 15 },
 };
 
-// API configuration - adjust to match your REST gateway
-const API_BASE_URL = "http://localhost:5050";
+/**
+ * API Client for backend communication
+ */
+const apiClient = {
+  async get(endpoint) {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  },
+  
+  async post(endpoint, data) {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  }
+};
 
 export default function DisasterRescueDashboard() {
-  const [victims, setVictims] = useState(MOCK_VICTIMS);
-  const [rescueTeams, setRescueTeams] = useState(MOCK_RESCUE_TEAMS);
-  const [inventory, setInventory] = useState(MOCK_INVENTORY);
+  const [victims, setVictims] = useState([]);
+  const [rescueTeams, setRescueTeams] = useState([]);
+  const [inventory, setInventory] = useState({});
   const [selectedVictim, setSelectedVictim] = useState(null);
   const [selectedTeam, setSelectedTeam] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [connectionStatus, setConnectionStatus] = useState("demo");
+  const [connectionStatus, setConnectionStatus] = useState("connecting");
   const [activeTab, setActiveTab] = useState("map");
+  const [error, setError] = useState(null);
+  
+  // New victim report form state
+  const [showReportForm, setShowReportForm] = useState(false);
+  const [reportForm, setReportForm] = useState({
+    location: '',
+    latitude: '',
+    longitude: '',
+    description: '',
+    num_people: 1,
+  });
+  const [submitting, setSubmitting] = useState(false);
 
   // Update clock every second
   useEffect(() => {
@@ -110,25 +111,141 @@ export default function DisasterRescueDashboard() {
     return () => clearInterval(timer);
   }, []);
 
-  // Simulated API fetch - replace with real API calls
+  // Fetch data from backend
   const fetchData = useCallback(async () => {
     try {
-      // In production, uncomment these:
-      // const victimsRes = await fetch(`${API_BASE_URL}/api/victim/queue`);
-      // const teamsRes = await fetch(`${API_BASE_URL}/api/rescue/teams`);
-      // const inventoryRes = await fetch(`${API_BASE_URL}/api/resource/inventory`);
-      setConnectionStatus("demo");
-    } catch (error) {
-      console.error("API fetch error:", error);
+      // Try to fetch from real API
+      const [victimsRes, teamsRes, inventoryRes] = await Promise.allSettled([
+        apiClient.get('/api/victim/queue'),
+        apiClient.get('/api/rescue/teams'),
+        apiClient.get('/api/resource/inventory'),
+      ]);
+
+      let apiConnected = false;
+
+      // Process victims response
+      if (victimsRes.status === 'fulfilled' && victimsRes.value) {
+        const victimsData = victimsRes.value.victims || victimsRes.value || [];
+        if (Array.isArray(victimsData)) {
+          setVictims(victimsData);
+          apiConnected = true;
+        }
+      }
+
+      // Process teams response
+      if (teamsRes.status === 'fulfilled' && teamsRes.value) {
+        const teamsData = teamsRes.value.teams || teamsRes.value || [];
+        if (Array.isArray(teamsData)) {
+          setRescueTeams(teamsData);
+          apiConnected = true;
+        }
+      }
+
+      // Process inventory response
+      if (inventoryRes.status === 'fulfilled' && inventoryRes.value) {
+        const invData = inventoryRes.value.items || inventoryRes.value || {};
+        if (typeof invData === 'object') {
+          setInventory(invData);
+          apiConnected = true;
+        }
+      }
+
+      setConnectionStatus(apiConnected ? "connected" : "demo");
+      setError(null);
+      
+      // Fall back to mock data if no API data received
+      if (!apiConnected) {
+        if (victims.length === 0) setVictims(MOCK_VICTIMS);
+        if (rescueTeams.length === 0) setRescueTeams(MOCK_RESCUE_TEAMS);
+        if (Object.keys(inventory).length === 0) setInventory(MOCK_INVENTORY);
+      }
+
+    } catch (err) {
+      console.error("API fetch error:", err);
       setConnectionStatus("offline");
+      setError(err.message);
+      
+      // Use mock data on error
+      if (victims.length === 0) setVictims(MOCK_VICTIMS);
+      if (rescueTeams.length === 0) setRescueTeams(MOCK_RESCUE_TEAMS);
+      if (Object.keys(inventory).length === 0) setInventory(MOCK_INVENTORY);
     }
-  }, []);
+  }, [victims.length, rescueTeams.length, inventory]);
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 10000);
+    const interval = setInterval(fetchData, 10000); // Poll every 10 seconds
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  // Submit new victim report
+  const handleSubmitReport = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    
+    try {
+      const payload = {
+        location: reportForm.location,
+        latitude: reportForm.latitude ? parseFloat(reportForm.latitude) : null,
+        longitude: reportForm.longitude ? parseFloat(reportForm.longitude) : null,
+        description: reportForm.description,
+        num_people: parseInt(reportForm.num_people) || 1,
+      };
+      
+      const result = await apiClient.post('/api/victim/report', payload);
+      
+      if (result.status === 'success' || result.victim_id) {
+        alert(`Report submitted successfully! Victim ID: ${result.victim_id || 'assigned'}`);
+        setShowReportForm(false);
+        setReportForm({ location: '', latitude: '', longitude: '', description: '', num_people: 1 });
+        fetchData(); // Refresh the data
+      } else {
+        alert(`Report status: ${result.message || JSON.stringify(result)}`);
+      }
+    } catch (err) {
+      console.error("Submit error:", err);
+      alert(`Failed to submit report: ${err.message}`);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Assign team to victim
+  const handleAssignTeam = async (teamId, victimId) => {
+    try {
+      const victim = victims.find(v => v.victim_id === victimId);
+      const result = await apiClient.post('/api/rescue/assign', {
+        team_id: teamId,
+        victim_id: victimId,
+        victim_location: victim?.location || null,
+      });
+      
+      if (result.status === 'success') {
+        alert(`Team ${teamId} assigned to ${victimId}. ETA: ${result.eta_minutes} minutes`);
+        fetchData();
+      } else {
+        alert(`Assignment failed: ${result.message}`);
+      }
+    } catch (err) {
+      alert(`Failed to assign team: ${err.message}`);
+    }
+  };
+
+  // Update victim status
+  const handleUpdateVictimStatus = async (victimId, newStatus) => {
+    try {
+      const result = await apiClient.post('/api/victim/status', {
+        victim_id: victimId,
+        status: newStatus,
+      });
+      
+      if (result.status === 'success') {
+        fetchData();
+      }
+    } catch (err) {
+      console.error("Status update error:", err);
+    }
+  };
 
   const getSeverityColor = (score) => {
     if (score >= 9) return "#ff1744";
@@ -150,6 +267,7 @@ export default function DisasterRescueDashboard() {
   };
 
   const formatTime = (isoString) => {
+    if (!isoString) return "Unknown";
     const date = new Date(isoString);
     const mins = Math.floor((Date.now() - date) / 60000);
     if (mins < 1) return "Just now";
@@ -160,6 +278,15 @@ export default function DisasterRescueDashboard() {
   const criticalCount = victims.filter((v) => v.score >= 9).length;
   const urgentCount = victims.filter((v) => v.score >= 7 && v.score < 9).length;
   const activeTeams = rescueTeams.filter((t) => t.status !== "available").length;
+  const availableTeams = rescueTeams.filter((t) => t.status === "available");
+
+  const getConnectionColor = () => {
+    switch (connectionStatus) {
+      case 'connected': return '#69f0ae';
+      case 'demo': return '#ff9100';
+      default: return '#ff1744';
+    }
+  };
 
   return (
     <div style={styles.container}>
@@ -210,16 +337,16 @@ export default function DisasterRescueDashboard() {
           <div
             style={{
               ...styles.connectionBadge,
-              borderColor: connectionStatus === "demo" ? "#ff9100" : "#ff1744",
+              borderColor: getConnectionColor(),
             }}
           >
             <span
               style={{
                 ...styles.connectionDot,
-                background: connectionStatus === "demo" ? "#ff9100" : "#ff1744",
+                background: getConnectionColor(),
               }}
             />
-            {connectionStatus.toUpperCase()} MODE
+            {connectionStatus.toUpperCase()}
           </div>
         </div>
       </header>
@@ -242,7 +369,100 @@ export default function DisasterRescueDashboard() {
             {tab.toUpperCase()}
           </button>
         ))}
+        
+        {/* Add Report Button */}
+        <button
+          onClick={() => setShowReportForm(true)}
+          style={styles.addReportButton}
+        >
+          ➕ NEW REPORT
+        </button>
       </nav>
+
+      {/* Error Banner */}
+      {error && connectionStatus === 'offline' && (
+        <div style={styles.errorBanner}>
+          ⚠️ API Connection Error: {error} - Using demo data
+        </div>
+      )}
+
+      {/* New Report Modal */}
+      {showReportForm && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>📞 NEW EMERGENCY REPORT</h2>
+              <button onClick={() => setShowReportForm(false)} style={styles.closeButton}>✕</button>
+            </div>
+            <form onSubmit={handleSubmitReport} style={styles.form}>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Location Description *</label>
+                <input
+                  type="text"
+                  value={reportForm.location}
+                  onChange={(e) => setReportForm({...reportForm, location: e.target.value})}
+                  placeholder="e.g., 45 Sukhumvit Road, Bangkok"
+                  style={styles.input}
+                  required
+                />
+              </div>
+              <div style={styles.formRow}>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Latitude</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={reportForm.latitude}
+                    onChange={(e) => setReportForm({...reportForm, latitude: e.target.value})}
+                    placeholder="13.7563"
+                    style={styles.input}
+                  />
+                </div>
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>Longitude</label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={reportForm.longitude}
+                    onChange={(e) => setReportForm({...reportForm, longitude: e.target.value})}
+                    placeholder="100.5018"
+                    style={styles.input}
+                  />
+                </div>
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Situation Description *</label>
+                <textarea
+                  value={reportForm.description}
+                  onChange={(e) => setReportForm({...reportForm, description: e.target.value})}
+                  placeholder="Describe the emergency situation, injuries, hazards..."
+                  style={styles.textarea}
+                  required
+                />
+              </div>
+              <div style={styles.formGroup}>
+                <label style={styles.label}>Number of People *</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={reportForm.num_people}
+                  onChange={(e) => setReportForm({...reportForm, num_people: e.target.value})}
+                  style={styles.input}
+                  required
+                />
+              </div>
+              <div style={styles.formActions}>
+                <button type="button" onClick={() => setShowReportForm(false)} style={styles.cancelButton}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={submitting} style={styles.submitButton}>
+                  {submitting ? 'Submitting...' : '🚨 Submit Emergency Report'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Main Content */}
       <main style={styles.main}>
@@ -252,12 +472,12 @@ export default function DisasterRescueDashboard() {
             <div style={styles.mapContainer}>
               <div style={styles.mapHeader}>
                 <span>LIVE SITUATION MAP</span>
-                <span style={styles.mapCoords}>BANGKOK METROPOLITAN AREA</span>
+                <span style={styles.mapCoords}>
+                  {victims.length} INCIDENTS | {rescueTeams.length} TEAMS
+                </span>
               </div>
               <div style={styles.mapContent}>
-                {/* ASCII-style map visualization */}
                 <div style={styles.gridMap}>
-                  {/* Grid lines */}
                   <svg style={styles.mapSvg} viewBox="0 0 400 300">
                     {/* Grid */}
                     {[...Array(11)].map((_, i) => (
@@ -285,35 +505,14 @@ export default function DisasterRescueDashboard() {
 
                     {/* Victims */}
                     {victims.map((v, idx) => {
-                      const x = 50 + idx * 80;
-                      const y = 80 + (idx % 2) * 100;
+                      const x = 50 + (idx % 4) * 90;
+                      const y = 60 + Math.floor(idx / 4) * 80;
                       return (
                         <g key={v.victim_id}>
-                          {/* Pulse ring for critical */}
                           {v.score >= 9 && (
-                            <circle
-                              cx={x}
-                              cy={y}
-                              r="20"
-                              fill="none"
-                              stroke="#ff1744"
-                              strokeWidth="2"
-                              opacity="0.5"
-                            >
-                              <animate
-                                attributeName="r"
-                                from="15"
-                                to="30"
-                                dur="1.5s"
-                                repeatCount="indefinite"
-                              />
-                              <animate
-                                attributeName="opacity"
-                                from="0.8"
-                                to="0"
-                                dur="1.5s"
-                                repeatCount="indefinite"
-                              />
+                            <circle cx={x} cy={y} r="20" fill="none" stroke="#ff1744" strokeWidth="2" opacity="0.5">
+                              <animate attributeName="r" from="15" to="30" dur="1.5s" repeatCount="indefinite" />
+                              <animate attributeName="opacity" from="0.8" to="0" dur="1.5s" repeatCount="indefinite" />
                             </circle>
                           )}
                           <circle
@@ -326,24 +525,11 @@ export default function DisasterRescueDashboard() {
                             style={{ cursor: "pointer" }}
                             onClick={() => setSelectedVictim(v)}
                           />
-                          <text
-                            x={x}
-                            y={y + 4}
-                            fill="#0a0a0f"
-                            fontSize="10"
-                            fontWeight="bold"
-                            textAnchor="middle"
-                          >
+                          <text x={x} y={y + 4} fill="#0a0a0f" fontSize="10" fontWeight="bold" textAnchor="middle">
                             {v.score}
                           </text>
-                          <text
-                            x={x}
-                            y={y + 28}
-                            fill="#8892b0"
-                            fontSize="8"
-                            textAnchor="middle"
-                          >
-                            {v.victim_id.slice(0, 8)}
+                          <text x={x} y={y + 28} fill="#8892b0" fontSize="8" textAnchor="middle">
+                            {v.victim_id.slice(0, 10)}
                           </text>
                         </g>
                       );
@@ -351,29 +537,23 @@ export default function DisasterRescueDashboard() {
 
                     {/* Rescue Teams */}
                     {rescueTeams.map((t, idx) => {
-                      const x = 100 + idx * 100;
-                      const y = 200;
+                      const x = 80 + idx * 90;
+                      const y = 240;
+                      const assignedVictimIdx = victims.findIndex((v) => v.victim_id === t.assigned_to);
                       return (
                         <g key={t.team_id}>
-                          {/* Direction line to assigned victim */}
-                          {t.assigned_to && (
+                          {t.assigned_to && assignedVictimIdx >= 0 && (
                             <line
                               x1={x}
                               y1={y}
-                              x2={50 + victims.findIndex((v) => v.victim_id === t.assigned_to) * 80}
-                              y2={80 + (victims.findIndex((v) => v.victim_id === t.assigned_to) % 2) * 100}
+                              x2={50 + (assignedVictimIdx % 4) * 90}
+                              y2={60 + Math.floor(assignedVictimIdx / 4) * 80}
                               stroke="#00e5ff"
                               strokeWidth="2"
                               strokeDasharray="5,5"
                               opacity="0.6"
                             >
-                              <animate
-                                attributeName="stroke-dashoffset"
-                                from="0"
-                                to="-10"
-                                dur="0.5s"
-                                repeatCount="indefinite"
-                              />
+                              <animate attributeName="stroke-dashoffset" from="0" to="-10" dur="0.5s" repeatCount="indefinite" />
                             </line>
                           )}
                           <rect
@@ -388,24 +568,8 @@ export default function DisasterRescueDashboard() {
                             style={{ cursor: "pointer" }}
                             onClick={() => setSelectedTeam(t)}
                           />
-                          <text
-                            x={x}
-                            y={y + 4}
-                            fill="#0a0a0f"
-                            fontSize="8"
-                            fontWeight="bold"
-                            textAnchor="middle"
-                          >
-                            {t.team_id.slice(2, 3)}
-                          </text>
-                          <text
-                            x={x}
-                            y={y + 32}
-                            fill="#64ffda"
-                            fontSize="8"
-                            textAnchor="middle"
-                          >
-                            {t.name.split(" ")[0]}
+                          <text x={x} y={y + 4} fill="#0a0a0f" fontSize="8" fontWeight="bold" textAnchor="middle">
+                            {t.team_id.slice(-1)}
                           </text>
                         </g>
                       );
@@ -424,16 +588,12 @@ export default function DisasterRescueDashboard() {
                     URGENT (7-8)
                   </div>
                   <div style={styles.legendItem}>
-                    <span style={{ ...styles.legendDot, background: "#ffea00" }} />
-                    SERIOUS (5-6)
+                    <span style={{ ...styles.legendSquare, background: "#69f0ae" }} />
+                    TEAM AVAILABLE
                   </div>
                   <div style={styles.legendItem}>
                     <span style={{ ...styles.legendSquare, background: "#00e5ff" }} />
-                    TEAM ACTIVE
-                  </div>
-                  <div style={styles.legendItem}>
-                    <span style={{ ...styles.legendSquare, background: "#69f0ae" }} />
-                    TEAM AVAILABLE
+                    TEAM DEPLOYED
                   </div>
                 </div>
               </div>
@@ -441,17 +601,11 @@ export default function DisasterRescueDashboard() {
 
             {/* Side Panel */}
             <div style={styles.sidePanel}>
-              {/* Selected Victim Details */}
               {selectedVictim && (
                 <div style={styles.detailCard}>
                   <div style={styles.detailHeader}>
                     <span>VICTIM DETAILS</span>
-                    <button
-                      onClick={() => setSelectedVictim(null)}
-                      style={styles.closeButton}
-                    >
-                      ✕
-                    </button>
+                    <button onClick={() => setSelectedVictim(null)} style={styles.closeButton}>✕</button>
                   </div>
                   <div style={styles.detailContent}>
                     <div style={styles.detailRow}>
@@ -460,12 +614,7 @@ export default function DisasterRescueDashboard() {
                     </div>
                     <div style={styles.detailRow}>
                       <span style={styles.detailLabel}>SEVERITY</span>
-                      <span
-                        style={{
-                          ...styles.severityBadge,
-                          background: getSeverityColor(selectedVictim.score),
-                        }}
-                      >
+                      <span style={{...styles.severityBadge, background: getSeverityColor(selectedVictim.score)}}>
                         {selectedVictim.score}/10 - {selectedVictim.priority_level}
                       </span>
                     </div>
@@ -476,13 +625,7 @@ export default function DisasterRescueDashboard() {
                     <div style={styles.detailRow}>
                       <span style={styles.detailLabel}>LOCATION</span>
                       <span style={styles.detailValue}>
-                        {selectedVictim.location.description}
-                      </span>
-                    </div>
-                    <div style={styles.detailRow}>
-                      <span style={styles.detailLabel}>COORDS</span>
-                      <span style={styles.coordsValue}>
-                        {selectedVictim.location.lat.toFixed(4)}, {selectedVictim.location.lng.toFixed(4)}
+                        {selectedVictim.location?.description || 'Unknown'}
                       </span>
                     </div>
                     <div style={styles.descriptionBox}>
@@ -491,38 +634,41 @@ export default function DisasterRescueDashboard() {
                     </div>
                     <div style={styles.detailRow}>
                       <span style={styles.detailLabel}>STATUS</span>
-                      <span
-                        style={{
-                          ...styles.statusBadgeSmall,
-                          ...getStatusBadge(selectedVictim.status),
-                          color: getStatusBadge(selectedVictim.status).text,
-                          borderColor: getStatusBadge(selectedVictim.status).border,
-                        }}
-                      >
-                        {selectedVictim.status.toUpperCase().replace("_", " ")}
+                      <span style={{
+                        ...styles.statusBadgeSmall,
+                        color: getStatusBadge(selectedVictim.status).text,
+                        borderColor: getStatusBadge(selectedVictim.status).border,
+                      }}>
+                        {selectedVictim.status?.toUpperCase().replace("_", " ")}
                       </span>
                     </div>
-                    <div style={styles.detailRow}>
-                      <span style={styles.detailLabel}>REPORTED</span>
-                      <span style={styles.detailValue}>
-                        {formatTime(selectedVictim.timestamp)}
-                      </span>
-                    </div>
+                    
+                    {/* Quick Actions */}
+                    {selectedVictim.status === 'pending' && availableTeams.length > 0 && (
+                      <div style={styles.quickActions}>
+                        <span style={styles.detailLabel}>ASSIGN TEAM</span>
+                        <div style={styles.teamButtons}>
+                          {availableTeams.slice(0, 3).map(team => (
+                            <button
+                              key={team.team_id}
+                              onClick={() => handleAssignTeam(team.team_id, selectedVictim.victim_id)}
+                              style={styles.assignButton}
+                            >
+                              {team.team_id}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
 
-              {/* Selected Team Details */}
               {selectedTeam && (
                 <div style={styles.detailCard}>
                   <div style={styles.detailHeader}>
                     <span>TEAM DETAILS</span>
-                    <button
-                      onClick={() => setSelectedTeam(null)}
-                      style={styles.closeButton}
-                    >
-                      ✕
-                    </button>
+                    <button onClick={() => setSelectedTeam(null)} style={styles.closeButton}>✕</button>
                   </div>
                   <div style={styles.detailContent}>
                     <div style={styles.detailRow}>
@@ -535,41 +681,23 @@ export default function DisasterRescueDashboard() {
                     </div>
                     <div style={styles.detailRow}>
                       <span style={styles.detailLabel}>STATUS</span>
-                      <span
-                        style={{
-                          ...styles.statusBadgeSmall,
-                          color: getStatusBadge(selectedTeam.status).text,
-                          borderColor: getStatusBadge(selectedTeam.status).border,
-                        }}
-                      >
-                        {selectedTeam.status.toUpperCase().replace("_", " ")}
+                      <span style={{
+                        ...styles.statusBadgeSmall,
+                        color: getStatusBadge(selectedTeam.status).text,
+                        borderColor: getStatusBadge(selectedTeam.status).border,
+                      }}>
+                        {selectedTeam.status?.toUpperCase().replace("_", " ")}
                       </span>
                     </div>
                     <div style={styles.detailRow}>
                       <span style={styles.detailLabel}>PERSONNEL</span>
                       <span style={styles.detailValue}>{selectedTeam.personnel}</span>
                     </div>
-                    <div style={styles.detailRow}>
-                      <span style={styles.detailLabel}>VEHICLE</span>
-                      <span style={styles.detailValue}>{selectedTeam.vehicle}</span>
-                    </div>
                     {selectedTeam.assigned_to && (
-                      <>
-                        <div style={styles.detailRow}>
-                          <span style={styles.detailLabel}>ASSIGNED TO</span>
-                          <span style={styles.assignedValue}>
-                            {selectedTeam.assigned_to}
-                          </span>
-                        </div>
-                        <div style={styles.detailRow}>
-                          <span style={styles.detailLabel}>ETA</span>
-                          <span style={styles.etaValue}>
-                            {selectedTeam.eta_minutes === 0
-                              ? "ON SCENE"
-                              : `${selectedTeam.eta_minutes} MIN`}
-                          </span>
-                        </div>
-                      </>
+                      <div style={styles.detailRow}>
+                        <span style={styles.detailLabel}>ASSIGNED TO</span>
+                        <span style={styles.assignedValue}>{selectedTeam.assigned_to}</span>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -579,7 +707,7 @@ export default function DisasterRescueDashboard() {
               <div style={styles.quickStats}>
                 <div style={styles.statBox}>
                   <div style={styles.statValue}>{victims.length}</div>
-                  <div style={styles.statLabel}>TOTAL INCIDENTS</div>
+                  <div style={styles.statLabel}>TOTAL</div>
                 </div>
                 <div style={styles.statBox}>
                   <div style={{ ...styles.statValue, color: "#ff1744" }}>
@@ -591,7 +719,7 @@ export default function DisasterRescueDashboard() {
                   <div style={{ ...styles.statValue, color: "#00e5ff" }}>
                     {victims.filter((v) => v.status === "in_progress").length}
                   </div>
-                  <div style={styles.statLabel}>IN PROGRESS</div>
+                  <div style={styles.statLabel}>ACTIVE</div>
                 </div>
               </div>
             </div>
@@ -623,32 +751,25 @@ export default function DisasterRescueDashboard() {
                     <div style={styles.queueMain}>
                       <div style={styles.queueTop}>
                         <span style={styles.queueId}>{victim.victim_id}</span>
-                        <span
-                          style={{
-                            ...styles.queueSeverity,
-                            background: getSeverityColor(victim.score),
-                          }}
-                        >
+                        <span style={{...styles.queueSeverity, background: getSeverityColor(victim.score)}}>
                           {victim.score}/10
                         </span>
                         <span style={styles.queueLevel}>{victim.priority_level}</span>
                       </div>
                       <div style={styles.queueDesc}>{victim.description}</div>
                       <div style={styles.queueMeta}>
-                        <span>📍 {victim.location.description}</span>
+                        <span>📍 {victim.location?.description || 'Unknown'}</span>
                         <span>👥 {victim.num_people} people</span>
                         <span>🕐 {formatTime(victim.timestamp)}</span>
                       </div>
                     </div>
                     <div style={styles.queueStatus}>
-                      <span
-                        style={{
-                          ...styles.statusBadgeSmall,
-                          color: getStatusBadge(victim.status).text,
-                          borderColor: getStatusBadge(victim.status).border,
-                        }}
-                      >
-                        {victim.status.toUpperCase().replace("_", " ")}
+                      <span style={{
+                        ...styles.statusBadgeSmall,
+                        color: getStatusBadge(victim.status).text,
+                        borderColor: getStatusBadge(victim.status).border,
+                      }}>
+                        {victim.status?.toUpperCase().replace("_", " ")}
                       </span>
                     </div>
                   </div>
@@ -676,23 +797,13 @@ export default function DisasterRescueDashboard() {
                   key={team.team_id}
                   style={{
                     ...styles.teamCard,
-                    borderColor:
-                      team.status === "available"
-                        ? "#69f0ae"
-                        : team.status === "en_route"
-                        ? "#ff9100"
-                        : "#00e5ff",
+                    borderColor: team.status === "available" ? "#69f0ae" : "#00e5ff",
                   }}
                 >
                   <div style={styles.teamCardHeader}>
                     <span style={styles.teamId}>{team.team_id}</span>
-                    <span
-                      style={{
-                        ...styles.teamStatus,
-                        color: getStatusBadge(team.status).text,
-                      }}
-                    >
-                      {team.status.toUpperCase().replace("_", " ")}
+                    <span style={{...styles.teamStatus, color: getStatusBadge(team.status).text}}>
+                      {team.status?.toUpperCase().replace("_", " ")}
                     </span>
                   </div>
                   <div style={styles.teamName}>{team.name}</div>
@@ -710,12 +821,13 @@ export default function DisasterRescueDashboard() {
                     <div style={styles.teamAssignment}>
                       <div style={styles.assignmentLabel}>ASSIGNED TO</div>
                       <div style={styles.assignmentValue}>{team.assigned_to}</div>
-                      <div style={styles.etaLabel}>
-                        ETA:{" "}
-                        <span style={styles.etaTime}>
-                          {team.eta_minutes === 0 ? "ON SCENE" : `${team.eta_minutes} min`}
-                        </span>
-                      </div>
+                      {team.eta_minutes !== null && (
+                        <div style={styles.etaLabel}>
+                          ETA: <span style={styles.etaTime}>
+                            {team.eta_minutes === 0 ? "ON SCENE" : `${team.eta_minutes} min`}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                   {!team.assigned_to && (
@@ -737,7 +849,7 @@ export default function DisasterRescueDashboard() {
             </div>
             <div style={styles.resourcesGrid}>
               {Object.entries(inventory).map(([item, data]) => {
-                const percentage = (data.available / data.total) * 100;
+                const percentage = data.total > 0 ? (data.available / data.total) * 100 : 0;
                 const isLow = percentage < 30;
                 const isCritical = percentage < 15;
                 return (
@@ -753,11 +865,7 @@ export default function DisasterRescueDashboard() {
                         style={{
                           ...styles.resourceBarFill,
                           width: `${percentage}%`,
-                          background: isCritical
-                            ? "#ff1744"
-                            : isLow
-                            ? "#ff9100"
-                            : "#69f0ae",
+                          background: isCritical ? "#ff1744" : isLow ? "#ff9100" : "#69f0ae",
                         }}
                       />
                     </div>
@@ -768,9 +876,7 @@ export default function DisasterRescueDashboard() {
                       </div>
                       <div style={styles.resourceStat}>
                         <span style={styles.resourceStatLabel}>Allocated</span>
-                        <span style={styles.resourceStatValueOrange}>
-                          {data.allocated}
-                        </span>
+                        <span style={styles.resourceStatValueOrange}>{data.allocated}</span>
                       </div>
                       <div style={styles.resourceStat}>
                         <span style={styles.resourceStatLabel}>Total</span>
@@ -787,15 +893,9 @@ export default function DisasterRescueDashboard() {
 
       {/* Footer */}
       <footer style={styles.footer}>
-        <div style={styles.footerLeft}>
-          SOLACE AGENT MESH • DISASTER RESPONSE SYSTEM
-        </div>
-        <div style={styles.footerCenter}>
-          REST API: {API_BASE_URL}
-        </div>
-        <div style={styles.footerRight}>
-          © 2026 Emergency Response Command
-        </div>
+        <div style={styles.footerLeft}>SOLACE AGENT MESH • DISASTER RESPONSE SYSTEM</div>
+        <div style={styles.footerCenter}>REST API: {API_BASE_URL}</div>
+        <div style={styles.footerRight}>© 2026 Emergency Response Command</div>
       </footer>
     </div>
   );
@@ -816,8 +916,7 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    background:
-      "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,229,255,0.03) 2px, rgba(0,229,255,0.03) 4px)",
+    background: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,229,255,0.03) 2px, rgba(0,229,255,0.03) 4px)",
     pointerEvents: "none",
     zIndex: 1000,
   },
@@ -830,662 +929,138 @@ const styles = {
     background: "rgba(10, 10, 15, 0.95)",
     backdropFilter: "blur(10px)",
   },
-  headerLeft: {
-    display: "flex",
-    alignItems: "center",
-    gap: "16px",
-  },
-  logoContainer: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-  },
-  logoIcon: {
-    fontSize: "32px",
-    background: "linear-gradient(135deg, #00e5ff, #64ffda)",
-    WebkitBackgroundClip: "text",
-    WebkitTextFillColor: "transparent",
-  },
-  title: {
-    fontSize: "20px",
-    fontWeight: 700,
-    color: "#00e5ff",
-    margin: 0,
-    letterSpacing: "2px",
-  },
-  subtitle: {
-    fontSize: "10px",
-    color: "#64ffda",
-    margin: 0,
-    letterSpacing: "4px",
-  },
-  headerCenter: {
-    display: "flex",
-    gap: "12px",
-  },
-  statusIndicators: {
-    display: "flex",
-    gap: "12px",
-    alignItems: "center",
-  },
-  criticalBadge: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    background: "rgba(255, 23, 68, 0.2)",
-    border: "1px solid #ff1744",
-    padding: "8px 16px",
-    borderRadius: "4px",
-    fontSize: "12px",
-    fontWeight: 600,
-    color: "#ff1744",
-    animation: "pulse 2s infinite",
-  },
-  pulsingDot: {
-    width: "8px",
-    height: "8px",
-    background: "#ff1744",
-    borderRadius: "50%",
-    animation: "pulse 1s infinite",
-  },
-  urgentBadge: {
-    background: "rgba(255, 145, 0, 0.2)",
-    border: "1px solid #ff9100",
-    padding: "8px 16px",
-    borderRadius: "4px",
-    fontSize: "12px",
-    fontWeight: 600,
-    color: "#ff9100",
-  },
-  teamsBadge: {
-    background: "rgba(0, 229, 255, 0.2)",
-    border: "1px solid #00e5ff",
-    padding: "8px 16px",
-    borderRadius: "4px",
-    fontSize: "12px",
-    fontWeight: 600,
-    color: "#00e5ff",
-  },
-  headerRight: {
-    display: "flex",
-    alignItems: "center",
-    gap: "20px",
-  },
-  clockContainer: {
-    textAlign: "right",
-  },
-  clockLabel: {
-    fontSize: "9px",
-    color: "#64ffda",
-    letterSpacing: "2px",
-  },
-  clock: {
-    fontSize: "24px",
-    fontWeight: 700,
-    color: "#00e5ff",
-    fontVariantNumeric: "tabular-nums",
-  },
-  dateDisplay: {
-    fontSize: "10px",
-    color: "#8892b0",
-  },
-  connectionBadge: {
-    display: "flex",
-    alignItems: "center",
-    gap: "6px",
-    padding: "6px 12px",
-    border: "1px solid",
-    borderRadius: "4px",
-    fontSize: "10px",
-    fontWeight: 600,
-  },
-  connectionDot: {
-    width: "6px",
-    height: "6px",
-    borderRadius: "50%",
-  },
-  nav: {
-    display: "flex",
-    gap: "4px",
-    padding: "8px 24px",
-    borderBottom: "1px solid #1a3a4a",
-    background: "rgba(13, 17, 23, 0.8)",
-  },
-  navButton: {
-    padding: "10px 20px",
-    background: "transparent",
-    border: "1px solid #1a3a4a",
-    borderRadius: "4px",
-    color: "#8892b0",
-    fontSize: "12px",
-    fontWeight: 600,
-    cursor: "pointer",
-    transition: "all 0.2s ease",
-    fontFamily: "inherit",
-    letterSpacing: "1px",
-  },
-  navButtonActive: {
-    background: "rgba(0, 229, 255, 0.1)",
-    borderColor: "#00e5ff",
-    color: "#00e5ff",
-  },
-  main: {
-    padding: "20px 24px",
-    minHeight: "calc(100vh - 200px)",
-  },
-  mapLayout: {
-    display: "grid",
-    gridTemplateColumns: "1fr 350px",
-    gap: "20px",
-    height: "calc(100vh - 240px)",
-  },
-  mapContainer: {
-    background: "rgba(13, 17, 23, 0.9)",
-    border: "1px solid #1a3a4a",
-    borderRadius: "8px",
-    overflow: "hidden",
-  },
-  mapHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    padding: "12px 16px",
-    borderBottom: "1px solid #1a3a4a",
-    fontSize: "12px",
-    fontWeight: 600,
-    color: "#64ffda",
-    letterSpacing: "1px",
-  },
-  mapCoords: {
-    color: "#8892b0",
-  },
-  mapContent: {
-    padding: "20px",
-    height: "calc(100% - 50px)",
-    display: "flex",
-    flexDirection: "column",
-  },
-  gridMap: {
-    flex: 1,
-    background: "#0a0a0f",
-    borderRadius: "4px",
-    border: "1px solid #1a3a4a",
-    overflow: "hidden",
-  },
-  mapSvg: {
-    width: "100%",
-    height: "100%",
-  },
-  mapLegend: {
-    display: "flex",
-    gap: "20px",
-    marginTop: "16px",
-    padding: "12px",
-    background: "rgba(26, 58, 74, 0.3)",
-    borderRadius: "4px",
-  },
-  legendItem: {
-    display: "flex",
-    alignItems: "center",
-    gap: "8px",
-    fontSize: "10px",
-    color: "#8892b0",
-  },
-  legendDot: {
-    width: "12px",
-    height: "12px",
-    borderRadius: "50%",
-  },
-  legendSquare: {
-    width: "12px",
-    height: "12px",
-    borderRadius: "2px",
-  },
-  sidePanel: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "16px",
-  },
-  detailCard: {
-    background: "rgba(13, 17, 23, 0.9)",
-    border: "1px solid #1a3a4a",
-    borderRadius: "8px",
-    overflow: "hidden",
-  },
-  detailHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "12px 16px",
-    borderBottom: "1px solid #1a3a4a",
-    fontSize: "11px",
-    fontWeight: 600,
-    color: "#64ffda",
-    letterSpacing: "1px",
-  },
-  closeButton: {
-    background: "transparent",
-    border: "none",
-    color: "#8892b0",
-    cursor: "pointer",
-    fontSize: "14px",
-    padding: "4px 8px",
-  },
-  detailContent: {
-    padding: "16px",
-  },
-  detailRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "12px",
-  },
-  detailLabel: {
-    fontSize: "10px",
-    color: "#8892b0",
-    letterSpacing: "1px",
-  },
-  detailValue: {
-    fontSize: "12px",
-    color: "#e6e6e6",
-    fontWeight: 500,
-  },
-  coordsValue: {
-    fontSize: "11px",
-    color: "#64ffda",
-    fontFamily: "'JetBrains Mono', monospace",
-  },
-  severityBadge: {
-    padding: "4px 10px",
-    borderRadius: "4px",
-    fontSize: "10px",
-    fontWeight: 700,
-    color: "#0a0a0f",
-  },
-  statusBadgeSmall: {
-    padding: "4px 10px",
-    borderRadius: "4px",
-    fontSize: "10px",
-    fontWeight: 600,
-    border: "1px solid",
-    background: "transparent",
-  },
-  descriptionBox: {
-    marginTop: "16px",
-    paddingTop: "16px",
-    borderTop: "1px solid #1a3a4a",
-  },
-  descriptionText: {
-    fontSize: "12px",
-    color: "#e6e6e6",
-    lineHeight: 1.6,
-    marginTop: "8px",
-  },
-  assignedValue: {
-    fontSize: "12px",
-    color: "#00e5ff",
-    fontWeight: 600,
-  },
-  etaValue: {
-    fontSize: "14px",
-    color: "#ff9100",
-    fontWeight: 700,
-  },
-  quickStats: {
-    display: "grid",
-    gridTemplateColumns: "repeat(3, 1fr)",
-    gap: "12px",
-    marginTop: "auto",
-  },
-  statBox: {
-    background: "rgba(13, 17, 23, 0.9)",
-    border: "1px solid #1a3a4a",
-    borderRadius: "8px",
-    padding: "16px",
-    textAlign: "center",
-  },
-  statValue: {
-    fontSize: "28px",
-    fontWeight: 700,
-    color: "#00e5ff",
-  },
-  statLabel: {
-    fontSize: "9px",
-    color: "#8892b0",
-    letterSpacing: "1px",
-    marginTop: "4px",
-  },
-  queueContainer: {
-    background: "rgba(13, 17, 23, 0.9)",
-    border: "1px solid #1a3a4a",
-    borderRadius: "8px",
-    overflow: "hidden",
-  },
-  queueHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "16px 20px",
-    borderBottom: "1px solid #1a3a4a",
-  },
-  queueTitle: {
-    fontSize: "14px",
-    fontWeight: 700,
-    color: "#64ffda",
-    letterSpacing: "2px",
-    margin: 0,
-  },
-  queueCount: {
-    fontSize: "12px",
-    color: "#8892b0",
-  },
-  queueList: {
-    maxHeight: "calc(100vh - 320px)",
-    overflowY: "auto",
-  },
-  queueItem: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: "16px",
-    padding: "16px 20px",
-    borderBottom: "1px solid #1a3a4a",
-    borderLeft: "4px solid",
-    cursor: "pointer",
-    transition: "background 0.2s ease",
-  },
-  queueRank: {
-    fontSize: "18px",
-    fontWeight: 700,
-    color: "#8892b0",
-    minWidth: "40px",
-  },
-  queueMain: {
-    flex: 1,
-  },
-  queueTop: {
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    marginBottom: "8px",
-  },
-  queueId: {
-    fontSize: "12px",
-    color: "#00e5ff",
-    fontWeight: 600,
-  },
-  queueSeverity: {
-    padding: "2px 8px",
-    borderRadius: "4px",
-    fontSize: "10px",
-    fontWeight: 700,
-    color: "#0a0a0f",
-  },
-  queueLevel: {
-    fontSize: "10px",
-    color: "#ff9100",
-    fontWeight: 600,
-    letterSpacing: "1px",
-  },
-  queueDesc: {
-    fontSize: "13px",
-    color: "#e6e6e6",
-    marginBottom: "8px",
-    lineHeight: 1.5,
-  },
-  queueMeta: {
-    display: "flex",
-    gap: "16px",
-    fontSize: "11px",
-    color: "#8892b0",
-  },
-  queueStatus: {
-    display: "flex",
-    alignItems: "flex-start",
-  },
-  teamsContainer: {
-    background: "rgba(13, 17, 23, 0.9)",
-    border: "1px solid #1a3a4a",
-    borderRadius: "8px",
-    overflow: "hidden",
-  },
-  teamsHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "16px 20px",
-    borderBottom: "1px solid #1a3a4a",
-  },
-  teamsTitle: {
-    fontSize: "14px",
-    fontWeight: 700,
-    color: "#64ffda",
-    letterSpacing: "2px",
-    margin: 0,
-  },
-  teamsStats: {
-    display: "flex",
-    gap: "12px",
-  },
-  teamStatGreen: {
-    fontSize: "11px",
-    color: "#69f0ae",
-    fontWeight: 600,
-  },
-  teamStatBlue: {
-    fontSize: "11px",
-    color: "#00e5ff",
-    fontWeight: 600,
-  },
-  teamsGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
-    gap: "16px",
-    padding: "20px",
-  },
-  teamCard: {
-    background: "rgba(26, 58, 74, 0.2)",
-    border: "2px solid",
-    borderRadius: "8px",
-    padding: "16px",
-  },
-  teamCardHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "8px",
-  },
-  teamId: {
-    fontSize: "14px",
-    fontWeight: 700,
-    color: "#00e5ff",
-  },
-  teamStatus: {
-    fontSize: "10px",
-    fontWeight: 600,
-    letterSpacing: "1px",
-  },
-  teamName: {
-    fontSize: "16px",
-    fontWeight: 600,
-    color: "#e6e6e6",
-    marginBottom: "16px",
-  },
-  teamDetails: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "12px",
-    marginBottom: "16px",
-  },
-  teamDetail: {
-    display: "flex",
-    flexDirection: "column",
-  },
-  teamDetailLabel: {
-    fontSize: "9px",
-    color: "#8892b0",
-    letterSpacing: "1px",
-    marginBottom: "4px",
-  },
-  teamDetailValue: {
-    fontSize: "12px",
-    color: "#e6e6e6",
-  },
-  teamAssignment: {
-    background: "rgba(0, 229, 255, 0.1)",
-    borderRadius: "4px",
-    padding: "12px",
-    marginTop: "8px",
-  },
-  assignmentLabel: {
-    fontSize: "9px",
-    color: "#64ffda",
-    letterSpacing: "1px",
-    marginBottom: "4px",
-  },
-  assignmentValue: {
-    fontSize: "14px",
-    color: "#00e5ff",
-    fontWeight: 600,
-    marginBottom: "8px",
-  },
-  etaLabel: {
-    fontSize: "11px",
-    color: "#8892b0",
-  },
-  etaTime: {
-    color: "#ff9100",
-    fontWeight: 600,
-  },
-  availableTag: {
-    background: "rgba(105, 240, 174, 0.1)",
-    borderRadius: "4px",
-    padding: "12px",
-    textAlign: "center",
-    fontSize: "11px",
-    color: "#69f0ae",
-    fontWeight: 600,
-    letterSpacing: "1px",
-    marginTop: "8px",
-  },
-  resourcesContainer: {
-    background: "rgba(13, 17, 23, 0.9)",
-    border: "1px solid #1a3a4a",
-    borderRadius: "8px",
-    overflow: "hidden",
-  },
-  resourcesHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "16px 20px",
-    borderBottom: "1px solid #1a3a4a",
-  },
-  resourcesTitle: {
-    fontSize: "14px",
-    fontWeight: 700,
-    color: "#64ffda",
-    letterSpacing: "2px",
-    margin: 0,
-  },
-  lastUpdated: {
-    fontSize: "11px",
-    color: "#8892b0",
-  },
-  resourcesGrid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-    gap: "16px",
-    padding: "20px",
-  },
-  resourceCard: {
-    background: "rgba(26, 58, 74, 0.2)",
-    border: "1px solid #1a3a4a",
-    borderRadius: "8px",
-    padding: "16px",
-  },
-  resourceHeader: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: "12px",
-  },
-  resourceName: {
-    fontSize: "12px",
-    fontWeight: 600,
-    color: "#e6e6e6",
-    letterSpacing: "1px",
-  },
-  criticalTag: {
-    fontSize: "9px",
-    fontWeight: 700,
-    color: "#ff1744",
-    background: "rgba(255, 23, 68, 0.2)",
-    padding: "2px 8px",
-    borderRadius: "4px",
-    animation: "pulse 1s infinite",
-  },
-  resourceBar: {
-    height: "8px",
-    background: "#1a3a4a",
-    borderRadius: "4px",
-    overflow: "hidden",
-    marginBottom: "12px",
-  },
-  resourceBarFill: {
-    height: "100%",
-    borderRadius: "4px",
-    transition: "width 0.3s ease",
-  },
-  resourceStats: {
-    display: "flex",
-    justifyContent: "space-between",
-  },
-  resourceStat: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-  },
-  resourceStatLabel: {
-    fontSize: "9px",
-    color: "#8892b0",
-    letterSpacing: "1px",
-    marginBottom: "4px",
-  },
-  resourceStatValue: {
-    fontSize: "16px",
-    fontWeight: 700,
-    color: "#69f0ae",
-  },
-  resourceStatValueOrange: {
-    fontSize: "16px",
-    fontWeight: 700,
-    color: "#ff9100",
-  },
-  footer: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "12px 24px",
-    borderTop: "1px solid #1a3a4a",
-    background: "rgba(10, 10, 15, 0.95)",
-    fontSize: "10px",
-    color: "#8892b0",
-    letterSpacing: "1px",
-  },
+  headerLeft: { display: "flex", alignItems: "center", gap: "16px" },
+  logoContainer: { display: "flex", alignItems: "center", gap: "12px" },
+  logoIcon: { fontSize: "32px", background: "linear-gradient(135deg, #00e5ff, #64ffda)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" },
+  title: { fontSize: "20px", fontWeight: 700, color: "#00e5ff", margin: 0, letterSpacing: "2px" },
+  subtitle: { fontSize: "10px", color: "#64ffda", margin: 0, letterSpacing: "4px" },
+  headerCenter: { display: "flex", gap: "12px" },
+  statusIndicators: { display: "flex", gap: "12px", alignItems: "center" },
+  criticalBadge: { display: "flex", alignItems: "center", gap: "8px", background: "rgba(255, 23, 68, 0.2)", border: "1px solid #ff1744", padding: "8px 16px", borderRadius: "4px", fontSize: "12px", fontWeight: 600, color: "#ff1744" },
+  pulsingDot: { width: "8px", height: "8px", background: "#ff1744", borderRadius: "50%", animation: "pulse 1s infinite" },
+  urgentBadge: { background: "rgba(255, 145, 0, 0.2)", border: "1px solid #ff9100", padding: "8px 16px", borderRadius: "4px", fontSize: "12px", fontWeight: 600, color: "#ff9100" },
+  teamsBadge: { background: "rgba(0, 229, 255, 0.2)", border: "1px solid #00e5ff", padding: "8px 16px", borderRadius: "4px", fontSize: "12px", fontWeight: 600, color: "#00e5ff" },
+  headerRight: { display: "flex", alignItems: "center", gap: "20px" },
+  clockContainer: { textAlign: "right" },
+  clockLabel: { fontSize: "9px", color: "#64ffda", letterSpacing: "2px" },
+  clock: { fontSize: "24px", fontWeight: 700, color: "#00e5ff", fontVariantNumeric: "tabular-nums" },
+  dateDisplay: { fontSize: "10px", color: "#8892b0" },
+  connectionBadge: { display: "flex", alignItems: "center", gap: "6px", padding: "6px 12px", border: "1px solid", borderRadius: "4px", fontSize: "10px", fontWeight: 600 },
+  connectionDot: { width: "6px", height: "6px", borderRadius: "50%" },
+  nav: { display: "flex", gap: "4px", padding: "8px 24px", borderBottom: "1px solid #1a3a4a", background: "rgba(13, 17, 23, 0.8)" },
+  navButton: { padding: "10px 20px", background: "transparent", border: "1px solid #1a3a4a", borderRadius: "4px", color: "#8892b0", fontSize: "12px", fontWeight: 600, cursor: "pointer", transition: "all 0.2s ease", fontFamily: "inherit", letterSpacing: "1px" },
+  navButtonActive: { background: "rgba(0, 229, 255, 0.1)", borderColor: "#00e5ff", color: "#00e5ff" },
+  addReportButton: { marginLeft: "auto", padding: "10px 20px", background: "rgba(105, 240, 174, 0.2)", border: "1px solid #69f0ae", borderRadius: "4px", color: "#69f0ae", fontSize: "12px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
+  errorBanner: { background: "rgba(255, 23, 68, 0.2)", borderBottom: "1px solid #ff1744", padding: "8px 24px", color: "#ff1744", fontSize: "12px" },
+  main: { padding: "20px 24px", minHeight: "calc(100vh - 200px)" },
+  mapLayout: { display: "grid", gridTemplateColumns: "1fr 350px", gap: "20px", height: "calc(100vh - 240px)" },
+  mapContainer: { background: "rgba(13, 17, 23, 0.9)", border: "1px solid #1a3a4a", borderRadius: "8px", overflow: "hidden" },
+  mapHeader: { display: "flex", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid #1a3a4a", fontSize: "12px", fontWeight: 600, color: "#64ffda", letterSpacing: "1px" },
+  mapCoords: { color: "#8892b0" },
+  mapContent: { padding: "20px", height: "calc(100% - 50px)", display: "flex", flexDirection: "column" },
+  gridMap: { flex: 1, background: "#0a0a0f", borderRadius: "4px", border: "1px solid #1a3a4a", overflow: "hidden" },
+  mapSvg: { width: "100%", height: "100%" },
+  mapLegend: { display: "flex", gap: "20px", marginTop: "16px", padding: "12px", background: "rgba(26, 58, 74, 0.3)", borderRadius: "4px" },
+  legendItem: { display: "flex", alignItems: "center", gap: "8px", fontSize: "10px", color: "#8892b0" },
+  legendDot: { width: "12px", height: "12px", borderRadius: "50%" },
+  legendSquare: { width: "12px", height: "12px", borderRadius: "2px" },
+  sidePanel: { display: "flex", flexDirection: "column", gap: "16px" },
+  detailCard: { background: "rgba(13, 17, 23, 0.9)", border: "1px solid #1a3a4a", borderRadius: "8px", overflow: "hidden" },
+  detailHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: "1px solid #1a3a4a", fontSize: "11px", fontWeight: 600, color: "#64ffda", letterSpacing: "1px" },
+  closeButton: { background: "transparent", border: "none", color: "#8892b0", cursor: "pointer", fontSize: "14px", padding: "4px 8px" },
+  detailContent: { padding: "16px" },
+  detailRow: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" },
+  detailLabel: { fontSize: "10px", color: "#8892b0", letterSpacing: "1px" },
+  detailValue: { fontSize: "12px", color: "#e6e6e6", fontWeight: 500 },
+  severityBadge: { padding: "4px 10px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, color: "#0a0a0f" },
+  statusBadgeSmall: { padding: "4px 10px", borderRadius: "4px", fontSize: "10px", fontWeight: 600, border: "1px solid", background: "transparent" },
+  descriptionBox: { marginTop: "16px", paddingTop: "16px", borderTop: "1px solid #1a3a4a" },
+  descriptionText: { fontSize: "12px", color: "#e6e6e6", lineHeight: 1.6, marginTop: "8px" },
+  assignedValue: { fontSize: "12px", color: "#00e5ff", fontWeight: 600 },
+  quickActions: { marginTop: "16px", paddingTop: "16px", borderTop: "1px solid #1a3a4a" },
+  teamButtons: { display: "flex", gap: "8px", marginTop: "8px" },
+  assignButton: { padding: "6px 12px", background: "rgba(0, 229, 255, 0.2)", border: "1px solid #00e5ff", borderRadius: "4px", color: "#00e5ff", fontSize: "10px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
+  quickStats: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginTop: "auto" },
+  statBox: { background: "rgba(13, 17, 23, 0.9)", border: "1px solid #1a3a4a", borderRadius: "8px", padding: "16px", textAlign: "center" },
+  statValue: { fontSize: "28px", fontWeight: 700, color: "#00e5ff" },
+  statLabel: { fontSize: "9px", color: "#8892b0", letterSpacing: "1px", marginTop: "4px" },
+  queueContainer: { background: "rgba(13, 17, 23, 0.9)", border: "1px solid #1a3a4a", borderRadius: "8px", overflow: "hidden" },
+  queueHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #1a3a4a" },
+  queueTitle: { fontSize: "14px", fontWeight: 700, color: "#64ffda", letterSpacing: "2px", margin: 0 },
+  queueCount: { fontSize: "12px", color: "#8892b0" },
+  queueList: { maxHeight: "calc(100vh - 320px)", overflowY: "auto" },
+  queueItem: { display: "flex", alignItems: "flex-start", gap: "16px", padding: "16px 20px", borderBottom: "1px solid #1a3a4a", borderLeft: "4px solid", cursor: "pointer", transition: "background 0.2s ease" },
+  queueRank: { fontSize: "18px", fontWeight: 700, color: "#8892b0", minWidth: "40px" },
+  queueMain: { flex: 1 },
+  queueTop: { display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" },
+  queueId: { fontSize: "12px", color: "#00e5ff", fontWeight: 600 },
+  queueSeverity: { padding: "2px 8px", borderRadius: "4px", fontSize: "10px", fontWeight: 700, color: "#0a0a0f" },
+  queueLevel: { fontSize: "10px", color: "#ff9100", fontWeight: 600, letterSpacing: "1px" },
+  queueDesc: { fontSize: "13px", color: "#e6e6e6", marginBottom: "8px", lineHeight: 1.5 },
+  queueMeta: { display: "flex", gap: "16px", fontSize: "11px", color: "#8892b0" },
+  queueStatus: { display: "flex", alignItems: "flex-start" },
+  teamsContainer: { background: "rgba(13, 17, 23, 0.9)", border: "1px solid #1a3a4a", borderRadius: "8px", overflow: "hidden" },
+  teamsHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #1a3a4a" },
+  teamsTitle: { fontSize: "14px", fontWeight: 700, color: "#64ffda", letterSpacing: "2px", margin: 0 },
+  teamsStats: { display: "flex", gap: "12px" },
+  teamStatGreen: { fontSize: "11px", color: "#69f0ae", fontWeight: 600 },
+  teamStatBlue: { fontSize: "11px", color: "#00e5ff", fontWeight: 600 },
+  teamsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "16px", padding: "20px" },
+  teamCard: { background: "rgba(26, 58, 74, 0.2)", border: "2px solid", borderRadius: "8px", padding: "16px" },
+  teamCardHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" },
+  teamId: { fontSize: "14px", fontWeight: 700, color: "#00e5ff" },
+  teamStatus: { fontSize: "10px", fontWeight: 600, letterSpacing: "1px" },
+  teamName: { fontSize: "16px", fontWeight: 600, color: "#e6e6e6", marginBottom: "16px" },
+  teamDetails: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" },
+  teamDetail: { display: "flex", flexDirection: "column" },
+  teamDetailLabel: { fontSize: "9px", color: "#8892b0", letterSpacing: "1px", marginBottom: "4px" },
+  teamDetailValue: { fontSize: "12px", color: "#e6e6e6" },
+  teamAssignment: { background: "rgba(0, 229, 255, 0.1)", borderRadius: "4px", padding: "12px", marginTop: "8px" },
+  assignmentLabel: { fontSize: "9px", color: "#64ffda", letterSpacing: "1px", marginBottom: "4px" },
+  assignmentValue: { fontSize: "14px", color: "#00e5ff", fontWeight: 600, marginBottom: "8px" },
+  etaLabel: { fontSize: "11px", color: "#8892b0" },
+  etaTime: { color: "#ff9100", fontWeight: 600 },
+  availableTag: { background: "rgba(105, 240, 174, 0.1)", borderRadius: "4px", padding: "12px", textAlign: "center", fontSize: "11px", color: "#69f0ae", fontWeight: 600, letterSpacing: "1px", marginTop: "8px" },
+  resourcesContainer: { background: "rgba(13, 17, 23, 0.9)", border: "1px solid #1a3a4a", borderRadius: "8px", overflow: "hidden" },
+  resourcesHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #1a3a4a" },
+  resourcesTitle: { fontSize: "14px", fontWeight: 700, color: "#64ffda", letterSpacing: "2px", margin: 0 },
+  lastUpdated: { fontSize: "11px", color: "#8892b0" },
+  resourcesGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "16px", padding: "20px" },
+  resourceCard: { background: "rgba(26, 58, 74, 0.2)", border: "1px solid #1a3a4a", borderRadius: "8px", padding: "16px" },
+  resourceHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" },
+  resourceName: { fontSize: "12px", fontWeight: 600, color: "#e6e6e6", letterSpacing: "1px" },
+  criticalTag: { fontSize: "9px", fontWeight: 700, color: "#ff1744", background: "rgba(255, 23, 68, 0.2)", padding: "2px 8px", borderRadius: "4px" },
+  resourceBar: { height: "8px", background: "#1a3a4a", borderRadius: "4px", overflow: "hidden", marginBottom: "12px" },
+  resourceBarFill: { height: "100%", borderRadius: "4px", transition: "width 0.3s ease" },
+  resourceStats: { display: "flex", justifyContent: "space-between" },
+  resourceStat: { display: "flex", flexDirection: "column", alignItems: "center" },
+  resourceStatLabel: { fontSize: "9px", color: "#8892b0", letterSpacing: "1px", marginBottom: "4px" },
+  resourceStatValue: { fontSize: "16px", fontWeight: 700, color: "#69f0ae" },
+  resourceStatValueOrange: { fontSize: "16px", fontWeight: 700, color: "#ff9100" },
+  footer: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 24px", borderTop: "1px solid #1a3a4a", background: "rgba(10, 10, 15, 0.95)", fontSize: "10px", color: "#8892b0", letterSpacing: "1px" },
   footerLeft: {},
-  footerCenter: {
-    color: "#64ffda",
-  },
+  footerCenter: { color: "#64ffda" },
   footerRight: {},
+  // Modal styles
+  modalOverlay: { position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 2000 },
+  modal: { background: "#0d1117", border: "1px solid #1a3a4a", borderRadius: "8px", width: "90%", maxWidth: "500px", maxHeight: "90vh", overflow: "auto" },
+  modalHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: "1px solid #1a3a4a" },
+  modalTitle: { fontSize: "14px", fontWeight: 700, color: "#ff1744", margin: 0, letterSpacing: "1px" },
+  form: { padding: "20px" },
+  formGroup: { marginBottom: "16px" },
+  formRow: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" },
+  label: { display: "block", fontSize: "10px", color: "#64ffda", letterSpacing: "1px", marginBottom: "6px" },
+  input: { width: "100%", padding: "10px 12px", background: "#1a1a2e", border: "1px solid #1a3a4a", borderRadius: "4px", color: "#e6e6e6", fontSize: "13px", fontFamily: "inherit" },
+  textarea: { width: "100%", padding: "10px 12px", background: "#1a1a2e", border: "1px solid #1a3a4a", borderRadius: "4px", color: "#e6e6e6", fontSize: "13px", fontFamily: "inherit", minHeight: "100px", resize: "vertical" },
+  formActions: { display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "20px" },
+  cancelButton: { padding: "10px 20px", background: "transparent", border: "1px solid #8892b0", borderRadius: "4px", color: "#8892b0", fontSize: "12px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
+  submitButton: { padding: "10px 20px", background: "rgba(255, 23, 68, 0.2)", border: "1px solid #ff1744", borderRadius: "4px", color: "#ff1744", fontSize: "12px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" },
 };
 
-// Add keyframes for animations
+// Add CSS animation
 const styleSheet = document.createElement("style");
 styleSheet.textContent = `
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-  
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 `;
 document.head.appendChild(styleSheet);
