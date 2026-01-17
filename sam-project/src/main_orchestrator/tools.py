@@ -22,7 +22,7 @@ async def process_validated_report(
     tool_config: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
-    Process a validated victim report by coordinating with other agents.
+    Process a validated victim report by coordinating with the severity agent.
     
     This tool should ONLY be called after:
     1. validate_victim_report returns is_valid=True

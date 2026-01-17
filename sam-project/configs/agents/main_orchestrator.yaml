@@ -119,11 +119,11 @@ apps:
         # ============================================================
         
         # Call SeverityAgent to get medical triage assessment
-        - tool_type: python
-          component_module: "src.main_orchestrator.agent_communication"
-          component_base_path: .
-          function_name: "call_severity_agent"
-          tool_description: "REQUIRED: Call the SeverityAgent to analyze victim situation and get severity score (1-10). Must be called before process_validated_report."
+        # - tool_type: python
+        #   component_module: "src.main_orchestrator.agent_communication"
+        #   component_base_path: .
+        #   function_name: "call_severity_agent"
+        #   tool_description: "REQUIRED: Call the SeverityAgent to analyze victim situation and get severity score (1-10). Must be called before process_validated_report."
         
         # ============================================================
         # ORCHESTRATOR COORDINATION TOOLS
@@ -198,5 +198,5 @@ apps:
       
       # Inter-agent Communication - Whitelist of agents this orchestrator can communicate with
       inter_agent_communication:
-        allow_list: ["SeverityAgent", "ResourcesAgent"]
+        allow_list: ["*"]
         request_timeout_seconds: 30

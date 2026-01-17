@@ -67,5 +67,5 @@ apps:
         enabled: true
       
       inter_agent_communication:
-        allow_list: ["MainOrchestratorAgent"]
-        request_timeout_seconds: 10
+        allow_list: ["*"]
+        request_timeout_seconds: 60
