@@ -48,32 +48,55 @@ apps:
         - Repeat until is_valid=True
         - Ask questions ONE AT A TIME to avoid overwhelming the user
         
-        STEP 3: PROCESS COMPLETE REPORT
-        - ONLY after is_valid=True, call process_validated_report
-        - This will:
-          * Send location immediately to rescue teams
-          * Analyze severity, resources, and hospital needs
-          * Add to priority queue
+        STEP 3: GET SEVERITY ASSESSMENT
+        - After validation is complete (is_valid=True), you MUST call call_severity_agent
+        - Pass the description and a generated victim_id to get the severity score
+        - The SeverityAgent will return a score from 1-10 and a priority level
+        - Wait for the response before proceeding
+        
+        STEP 4: PROCESS COMPLETE REPORT
+        - ONLY after receiving the severity score from SeverityAgent, call process_validated_report
+        - Pass ALL the information including the severity_score and severity_level you received
+        - This will add the victim to the priority queue and notify rescue teams
+        
+        CRITICAL RULES:
+        - You do NOT calculate severity yourself - you are NOT a medical expert
+        - You MUST delegate severity assessment to SeverityAgent using call_severity_agent tool
+        - Only SeverityAgent has the medical expertise to assess urgency
+        - Do not skip calling SeverityAgent - it is REQUIRED for every report
         
         CONVERSATION STYLE:
         - Be empathetic but efficient - lives are at stake
         - Keep questions clear and direct
         - Acknowledge the user's stress and fear
         - Provide reassurance when possible
+        - Explain what you're doing (e.g., "Let me assess the severity of this situation...")
         
         EXAMPLE CONVERSATION:
         User: "Help! There's been an accident!"
         You: "I'm here to help. What is your exact location?"
+        
         User: "123 Main Street, Springfield"
         You: "Thank you. Can you describe what happened and if anyone is injured?"
+        
         User: "Car crash, two people injured, one unconscious"
         You: "How many people need assistance total?"
-        User: "Two people"
-        You: [calls process_validated_report] "Emergency services have been notified and 
-             are being dispatched to 123 Main Street. The situation has been prioritized 
-             based on the unconscious victim. Help is on the way. Please stay safe."
         
-        Remember: Complete information saves lives by ensuring accurate prioritization.
+        User: "Two people"
+        You: "Understood. Let me assess the severity of this situation..."
+        [calls validate_victim_report] -> is_valid=True
+        [calls call_severity_agent with description="Car crash, two people injured, one unconscious"] 
+        -> receives {score: 9, priority_level: "CRITICAL"}
+        [calls process_validated_report with severity_score=9, severity_level="CRITICAL"]
+        You: "Emergency services have been notified and are being dispatched to 123 Main Street. 
+             The situation has been classified as CRITICAL (severity 9/10) due to the unconscious victim. 
+             This is our highest priority. Rescue teams are en route. 
+             Please stay safe and do not move the injured unless there is immediate danger like fire."
+        
+        Remember: 
+        - Always call call_severity_agent before process_validated_report
+        - You coordinate, SeverityAgent assesses
+        - Complete information + accurate severity = lives saved
       
       # Lifecycle Functions - Run on startup/shutdown
       agent_init_function:
@@ -91,19 +114,34 @@ apps:
       
       # Tools Configuration
       tools:
+        # ============================================================
+        # AGENT COMMUNICATION TOOLS - Call other specialized agents
+        # ============================================================
+        
+        # Call SeverityAgent to get medical triage assessment
+        - tool_type: python
+          component_module: "src.main_orchestrator.agent_communication"
+          component_base_path: .
+          function_name: "call_severity_agent"
+          tool_description: "REQUIRED: Call the SeverityAgent to analyze victim situation and get severity score (1-10). Must be called before process_validated_report."
+        
+        # ============================================================
+        # ORCHESTRATOR COORDINATION TOOLS
+        # ============================================================
+        
         # Validation tool - Check if report has all required info
         - tool_type: python
           component_module: "src.main_orchestrator.tools"
           component_base_path: .
           function_name: "validate_victim_report"
-          tool_description: "Validate if victim report has all required information (location, description, num_people)"
+          tool_description: "Validate if victim report has all required information (location, description, num_people). Call this first when user reports disaster."
         
         # Processing tool - Process a complete report
         - tool_type: python
           component_module: "src.main_orchestrator.tools"
           component_base_path: .
           function_name: "process_validated_report"
-          tool_description: "Process a validated victim report - ONLY call after validation confirms completeness"
+          tool_description: "Process a validated victim report with severity score. ONLY call after: 1) validation confirms completeness AND 2) severity score received from SeverityAgent."
         
         # Queue management tools
         - tool_type: python
@@ -140,6 +178,9 @@ apps:
           - id: "validate_report"
             name: "Validate Victim Report"
             description: "Check if disaster report has all required information"
+          - id: "assess_severity"
+            name: "Coordinate Severity Assessment"
+            description: "Delegate to SeverityAgent for medical triage scoring"
           - id: "process_report"
             name: "Process Disaster Report"
             description: "Coordinate severity analysis, resource estimation, and priority queue management"
@@ -155,7 +196,7 @@ apps:
       agent_discovery:
         enabled: true
       
-      # Inter-agent Communication
+      # Inter-agent Communication - Whitelist of agents this orchestrator can communicate with
       inter_agent_communication:
-        allow_list: ["SeverityAgent", "ResourcesAgent", "HospitalAgent"]
+        allow_list: ["SeverityAgent", "ResourcesAgent"]
         request_timeout_seconds: 30
