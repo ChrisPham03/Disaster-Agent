@@ -1,137 +1,134 @@
-agent:
-  name: rescue_agent
-  description: >
-    Receives victim assignments, calculates required tools and personnel,
-    and coordinates rescue team deployments.
-  
-  agent_card:
-    name: "Rescue Coordinator"
-    description: "Coordinates rescue teams, equipment, and personnel"
-    capabilities:
-      - team_assignment
-      - equipment_calculation
-      - personnel_planning
-      - navigation
+# Solace Agent Mesh Rescue Agent Configuration
+# FIXED: Using correct SAM tool configuration format
 
-  llm:
-    provider: ${SAM_LLM_PROVIDER}
-    model: ${SAM_LLM_MODEL}
-    api_key: ${SAM_LLM_API_KEY}
-    temperature: 0.2
+log:
+  stdout_log_level: INFO
+  log_file_level: DEBUG
+  log_file: rescue-agent.log
 
-  instructions: |
-    You are the Rescue Coordination Agent. Your responsibilities:
-    
-    1. RECEIVE VICTIM REPORTS:
-       - Accept victim reports from Master Agent
-       - Parse location, severity, and victim count
-       - Identify scenario type (building_collapse, flood, fire, medical, general)
-    
-    2. CALCULATE REQUIREMENTS:
-       - Determine scenario type based on conditions
-       - Calculate equipment needed using calculate_equipment tool
-       - Calculate personnel using calculate_personnel tool
-    
-    3. REQUEST RESOURCES:
-       - Send equipment request to Resource Agent
-       - Handle partial allocations gracefully
-       - Adjust plans if resources unavailable
-    
-    4. COORDINATE DEPLOYMENT:
-       - Generate route to victim location using get_route tool
-       - Assign team and equipment
-       - Provide deployment instructions with ETA
-    
-    Scenario Type Detection:
-       - "structural_collapse" condition → building_collapse
-       - "flooding" condition → flood
-       - "fire_hazard" condition → fire
-       - Injuries without hazards → medical
-       - Default → general
-    
-    Always prioritize CRITICAL victims.
-    Confirm resource availability before finalizing assignments.
+!include ../shared_config.yaml
 
-  tools:
-    - group_name: artifact_management
-      tool_type: builtin-group
+apps:
+  - name: rescue-agent_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
     
-    - tool_type: python
-      name: calculate_equipment
-      description: "Calculate required equipment based on rescue scenario"
-      module: modules.rescue_tools.tools_calculator
-      function: calculate_equipment
-      parameters:
-        - name: scenario_type
-          type: string
-          description: "building_collapse, flood, fire, medical, or general"
-          required: true
-        - name: num_victims
-          type: integer
-          description: "Number of victims"
-          required: true
-        - name: severity
-          type: string
-          description: "CRITICAL, MODERATE, or STABLE"
-          required: true
-        - name: special_conditions
-          type: array
-          description: "Optional: elderly, children, disabled"
-          required: false
-    
-    - tool_type: python
-      name: calculate_personnel
-      description: "Calculate minimum personnel for rescue operation"
-      module: modules.rescue_tools.personnel_calc
-      function: calculate_personnel
-      parameters:
-        - name: scenario_type
-          type: string
-          description: "Type of disaster scenario"
-          required: true
-        - name: num_victims
-          type: integer
-          description: "Number of victims"
-          required: true
-        - name: severity
-          type: string
-          description: "CRITICAL, MODERATE, or STABLE"
-          required: true
-        - name: equipment_count
-          type: integer
-          description: "Number of heavy equipment items"
-          required: false
-    
-    - tool_type: python
-      name: get_route
-      description: "Get optimal route to victim location"
-      module: modules.rescue_tools.navigation
-      function: get_route
-      parameters:
-        - name: origin
-          type: object
-          description: "Rescue station location {lat: float, lng: float}"
-          required: true
-        - name: destination
-          type: object
-          description: "Victim location {lat: float, lng: float}"
-          required: true
-        - name: avoid_hazards
-          type: array
-          description: "Optional list of hazards to avoid in routing"
-          required: false
-    
-    - tool_type: python
-      name: estimate_arrival_time
-      description: "Estimate arrival time based on distance and traffic"
-      module: modules.rescue_tools.navigation
-      function: estimate_arrival_time
-      parameters:
-        - name: distance_km
-          type: number
-          description: "Distance in kilometers"
-          required: true
-        - name: traffic_level
-          type: string
-          description: "light, normal, or heavy"
-          required: false
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "RescueAgent"
+      display_name: "Rescue Coordinator"
+      model: *general_model
+      
+      instruction: |
+        You are the Rescue Coordination Agent. Your responsibilities:
+        
+        1. RECEIVE VICTIM REPORTS:
+           - Accept victim reports from Master Agent
+           - Parse location, severity, and victim count
+           - Identify scenario type (building_collapse, flood, fire, medical, general)
+        
+        2. CALCULATE REQUIREMENTS:
+           - Determine scenario type based on conditions
+           - Calculate equipment needed using calculate_equipment tool
+           - Calculate personnel using calculate_personnel tool
+        
+        3. REQUEST RESOURCES:
+           - Send equipment request to Resource Agent
+           - Handle partial allocations gracefully
+           - Adjust plans if resources unavailable
+        
+        4. COORDINATE DEPLOYMENT:
+           - Generate route to victim location using get_route tool
+           - Assign team and equipment
+           - Provide deployment instructions with ETA
+        
+        Scenario Type Detection:
+           - "structural_collapse" condition → building_collapse
+           - "flooding" condition → flood
+           - "fire_hazard" condition → fire
+           - Injuries without hazards → medical
+           - Default → general
+        
+        Always prioritize CRITICAL victims.
+        Confirm resource availability before finalizing assignments.
+      
+      inject_system_purpose: true
+      inject_response_format: true
+      
+      session_service:
+        type: "memory"
+        default_behavior: "PERSISTENT"
+      
+      artifact_service: *default_artifact_service
+      
+      tools:
+        # Built-in artifact management tools
+        - tool_type: builtin-group
+          group_name: artifact_management
+        
+        # Python tool: Calculate Equipment
+        - tool_type: python
+          component_module: modules.rescue_tools.tools_calculator
+          component_base_path: .
+          function_name: calculate_equipment
+          tool_name: calculate_equipment
+          tool_config: {}
+        
+        # Python tool: Calculate Personnel
+        - tool_type: python
+          component_module: modules.rescue_tools.personnel_calc
+          component_base_path: .
+          function_name: calculate_personnel
+          tool_name: calculate_personnel
+          tool_config: {}
+        
+        # Python tool: Get Route
+        - tool_type: python
+          component_module: modules.rescue_tools.navigation
+          component_base_path: .
+          function_name: get_route
+          tool_name: get_route
+          tool_config: {}
+        
+        # Python tool: Estimate Arrival Time
+        - tool_type: python
+          component_module: modules.rescue_tools.navigation
+          component_base_path: .
+          function_name: estimate_arrival_time
+          tool_name: estimate_arrival_time
+          tool_config: {}
+
+      agent_card:
+        description: "Coordinates rescue teams, equipment, and personnel for disaster response operations."
+        defaultInputModes: [text]
+        defaultOutputModes: [text]
+        skills:
+          - id: calculate_equipment
+            name: Equipment Calculator
+            description: Calculate required equipment based on rescue scenario type, number of victims, and severity.
+          
+          - id: calculate_personnel
+            name: Personnel Calculator
+            description: Calculate minimum and recommended personnel for rescue operations.
+          
+          - id: get_route
+            name: Route Planner
+            description: Get optimal route to victim location with hazard avoidance.
+          
+          - id: estimate_arrival_time
+            name: ETA Calculator
+            description: Estimate arrival time based on distance and traffic conditions.
+
+      agent_card_publishing:
+        interval_seconds: 10
+      
+      agent_discovery:
+        enabled: true
+      
+      inter_agent_communication:
+        allow_list: ["*"]
+        request_timeout_seconds: 300

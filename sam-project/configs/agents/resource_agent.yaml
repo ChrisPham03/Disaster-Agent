@@ -1,125 +1,139 @@
-agent:
-  name: resource_agent
-  description: >
-    Manages inventory of rescue equipment, vehicles, and personnel.
-    Handles allocation requests and alerts on low stock.
-  
-  agent_card:
-    name: "Resource Manager"
-    description: "Manages equipment inventory and resource allocation"
-    capabilities:
-      - inventory_management
-      - resource_allocation
-      - availability_check
-      - low_stock_alerts
+# Solace Agent Mesh Resource Agent Configuration
+# FIXED: Using correct SAM tool configuration format
 
-  llm:
-    provider: ${SAM_LLM_PROVIDER}
-    model: ${SAM_LLM_MODEL}
-    api_key: ${SAM_LLM_API_KEY}
-    temperature: 0.1
+log:
+  stdout_log_level: INFO
+  log_file_level: DEBUG
+  log_file: resource-agent.log
 
-  instructions: |
-    You are the Resource Management Agent. Your responsibilities:
-    
-    1. INVENTORY MANAGEMENT:
-       - Track all equipment (stretchers, tools, vehicles, medical supplies)
-       - Monitor stock levels and alert when low
-       - Maintain accurate counts after allocations
-    
-    2. RESOURCE ALLOCATION:
-       - Process equipment requests from Rescue Agent
-       - Check availability before confirming
-       - Allocate available items, report shortfalls
-       - Reserve resources for confirmed missions
-    
-    3. ALERTS:
-       - Alert when equipment falls below threshold
-       - Escalate critical shortages immediately
-    
-    Available Equipment Categories:
-    - Medical: stretcher, first_aid_kit, defibrillator, oxygen_tank, splints, pediatric_kit, wheelchair_stretcher
-    - Rescue Tools: hydraulic_cutter, concrete_saw, airbag_lifter, flashlight, radio, rope, ladder
-    - Fire/Flood: fire_extinguisher, breathing_apparatus, thermal_camera, life_jacket, inflatable_boat, water_pump
-    
-    Always confirm availability before allocation.
-    Provide partial allocation if full request cannot be met.
+!include ../shared_config.yaml
 
-  tools:
-    - group_name: artifact_management
-      tool_type: builtin-group
+apps:
+  - name: resource-agent_app
+    app_base_path: .
+    app_module: solace_agent_mesh.agent.sac.app
     
-    - tool_type: python
-      name: check_inventory
-      description: "Check current inventory levels for all or specific equipment"
-      module: modules.resource_tools.inventory
-      function: check_inventory
-      parameters:
-        - name: item_type
-          type: string
-          description: "Specific item to check, or omit for all items"
-          required: false
-    
-    - tool_type: python
-      name: get_item_status
-      description: "Get detailed status of a single inventory item"
-      module: modules.resource_tools.inventory
-      function: get_item_status
-      parameters:
-        - name: item_name
-          type: string
-          description: "Name of the equipment item"
-          required: true
-    
-    - tool_type: python
-      name: allocate_resources
-      description: "Allocate equipment to a rescue mission"
-      module: modules.resource_tools.allocator
-      function: allocate_resources
-      parameters:
-        - name: request_id
-          type: string
-          description: "Request ID (format: REQ-{timestamp})"
-          required: true
-        - name: mission_id
-          type: string
-          description: "Mission ID (format: M-{timestamp})"
-          required: true
-        - name: equipment_list
-          type: array
-          description: "List of {item: string, quantity: int, priority: string}"
-          required: true
-        - name: team_id
-          type: string
-          description: "Optional team ID, auto-generated if not provided"
-          required: false
-    
-    - tool_type: python
-      name: release_resources
-      description: "Release resources when mission completes"
-      module: modules.resource_tools.allocator
-      function: release_resources
-      parameters:
-        - name: mission_id
-          type: string
-          description: "Mission ID to release resources for"
-          required: true
-    
-    - tool_type: python
-      name: send_alert
-      description: "Send low-stock or critical inventory alert"
-      module: modules.resource_tools.inventory
-      function: send_alert
-      parameters:
-        - name: item_name
-          type: string
-          description: "Equipment name"
-          required: true
-        - name: alert_type
-          type: string
-          description: "low_stock, critical, or out_of_stock"
-          required: true
-        - name: message
-          type: string
-          description: "Alert message"
-          required: true
+    broker:
+      <<: *broker_connection
+
+    app_config:
+      namespace: ${NAMESPACE}
+      supports_streaming: true
+      agent_name: "ResourceAgent"
+      display_name: "Resource Manager"
+      model: *general_model
+      
+      instruction: |
+        You are the Resource Management Agent. Your responsibilities:
+        
+        1. INVENTORY MANAGEMENT:
+           - Track all equipment (stretchers, tools, vehicles, medical supplies)
+           - Monitor stock levels and alert when low
+           - Maintain accurate counts after allocations
+        
+        2. RESOURCE ALLOCATION:
+           - Process equipment requests from Rescue Agent
+           - Check availability before confirming
+           - Allocate available items, report shortfalls
+           - Reserve resources for confirmed missions
+        
+        3. ALERTS:
+           - Alert when equipment falls below threshold
+           - Escalate critical shortages immediately
+        
+        Available Equipment Categories:
+        - Medical: stretcher, first_aid_kit, defibrillator, oxygen_tank, splints, pediatric_kit, wheelchair_stretcher
+        - Rescue Tools: hydraulic_cutter, concrete_saw, airbag_lifter, flashlight, radio, rope, ladder
+        - Fire/Flood: fire_extinguisher, breathing_apparatus, thermal_camera, life_jacket, inflatable_boat, water_pump
+        
+        Always confirm availability before allocation.
+        Provide partial allocation if full request cannot be met.
+      
+      inject_system_purpose: true
+      inject_response_format: true
+      
+      session_service:
+        type: "memory"
+        default_behavior: "PERSISTENT"
+      
+      artifact_service: *default_artifact_service
+      
+      tools:
+        # Built-in artifact management tools
+        - tool_type: builtin-group
+          group_name: artifact_management
+        
+        # Python tool: Check Inventory
+        - tool_type: python
+          component_module: modules.resource_tools.inventory
+          component_base_path: .
+          function_name: check_inventory
+          tool_name: check_inventory
+          tool_config: {}
+        
+        # Python tool: Get Item Status
+        - tool_type: python
+          component_module: modules.resource_tools.inventory
+          component_base_path: .
+          function_name: get_item_status
+          tool_name: get_item_status
+          tool_config: {}
+        
+        # Python tool: Allocate Resources
+        - tool_type: python
+          component_module: modules.resource_tools.allocator
+          component_base_path: .
+          function_name: allocate_resources
+          tool_name: allocate_resources
+          tool_config: {}
+        
+        # Python tool: Release Resources
+        - tool_type: python
+          component_module: modules.resource_tools.allocator
+          component_base_path: .
+          function_name: release_resources
+          tool_name: release_resources
+          tool_config: {}
+        
+        # Python tool: Send Alert
+        - tool_type: python
+          component_module: modules.resource_tools.inventory
+          component_base_path: .
+          function_name: send_alert
+          tool_name: send_alert
+          tool_config: {}
+
+      agent_card:
+        description: "Manages equipment inventory and resource allocation for rescue operations. Tracks availability, processes allocation requests, and alerts on low stock."
+        defaultInputModes: [text]
+        defaultOutputModes: [text]
+        skills:
+          - id: check_inventory
+            name: Inventory Checker
+            description: Check current inventory levels for all or specific equipment items.
+          
+          - id: get_item_status
+            name: Item Status
+            description: Get detailed status of a single inventory item including availability, total, and threshold.
+          
+          - id: allocate_resources
+            name: Resource Allocator
+            description: Allocate equipment to a rescue mission with team assignment and shortfall reporting.
+          
+          - id: release_resources
+            name: Resource Release
+            description: Release resources when mission completes and return items to inventory.
+          
+          - id: send_alert
+            name: Alert Sender
+            description: Send low-stock or critical inventory alerts for equipment items.
+
+      agent_card_publishing:
+        interval_seconds: 10
+      
+      agent_discovery:
+        enabled: true
+      
+      inter_agent_communication:
+        allow_list: ["*"]
+        request_timeout_seconds: 300
