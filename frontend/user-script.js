@@ -56,7 +56,7 @@ const form = document.getElementById('emergencyForm');
                 phone: document.getElementById('phone').value,
                 emergencyType: document.getElementById('emergencyType').value,
                 description: document.getElementById('description').value,
-                location: document.getElementById('location').value || 'Not provided',
+                location: document.getElementById('location').value,
                 timestamp: new Date().toISOString()
             };
 
