@@ -1,10 +1,6 @@
 solace-agent-mesh~=1.13.6
-
-# REST API Server (for standalone testing)
 fastapi>=0.100.0
 uvicorn>=0.23.0
 pydantic>=2.0.0
-
-# Async support
 aiohttp>=3.8.0
 httpx>=0.24.0

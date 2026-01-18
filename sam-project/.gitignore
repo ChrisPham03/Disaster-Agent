@@ -25,3 +25,10 @@ __pycache__/
 # Logs & AWS SAM
 *.log
 .sam/
+
+# Terraform (IMPORTANT!)
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log

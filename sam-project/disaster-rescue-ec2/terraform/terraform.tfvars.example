@@ -1,0 +1,57 @@
+# =============================================================================
+# Terraform Variables - Copy to terraform.tfvars and fill in
+# =============================================================================
+
+# AWS Configuration
+aws_region  = "us-east-1"
+environment = "prod"
+app_name    = "disaster-rescue"
+
+# =============================================================================
+# VPC Configuration
+# =============================================================================
+
+vpc_cidr = "10.0.0.0/16"
+
+# =============================================================================
+# EC2 Configuration
+# =============================================================================
+
+# Instance type - adjust based on your needs
+# t3.micro  = 2 vCPU, 1 GB  (~$8/month)   - Dev/Testing
+# t3.small  = 2 vCPU, 2 GB  (~$15/month)  - Light workloads
+# t3.medium = 2 vCPU, 4 GB  (~$30/month)  - Production
+# t3.large  = 2 vCPU, 8 GB  (~$60/month)  - Heavy workloads
+instance_type = "t3.medium"
+
+# Auto Scaling
+min_instances     = 2   # Minimum for high availability
+max_instances     = 10  # Maximum during spikes
+desired_instances = 2   # Normal operation
+
+# Optional: SSH Key Pair (create in AWS Console first)
+# key_pair_name = "my-key-pair"
+key_pair_name = ""
+
+# =============================================================================
+# Auto Scaling Thresholds
+# =============================================================================
+
+scale_up_cpu_threshold   = 70  # Scale up when CPU > 70%
+scale_down_cpu_threshold = 30  # Scale down when CPU < 30%
+
+# =============================================================================
+# LLM Service Configuration (REQUIRED)
+# =============================================================================
+
+llm_service_endpoint = "https://api.openai.com/v1"
+llm_service_api_key  = "sk-your-api-key-here"
+llm_model_name       = "gpt-4"
+
+# =============================================================================
+# Optional: Custom Domain
+# =============================================================================
+
+domain_name        = ""
+create_dns_records = false
+route53_zone_id    = ""
