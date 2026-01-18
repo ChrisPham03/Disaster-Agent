@@ -1,4 +1,4 @@
-# Test# 🚨 Disaster Rescue Coordination System
+# 🚨 Disaster Rescue Coordination System
 
 > An AI-powered real-time disaster rescue coordination platform built with **Solace Agent Mesh (SAM)** — an open-source framework for building event-driven multi-agent AI systems.
 
