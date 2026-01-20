@@ -128,6 +128,3 @@ git push origin main
 
 ---
 
-**Built with ❤️ using Solace Agent Mesh**
-
-*Making disaster response faster, smarter, and more coordinated.*
